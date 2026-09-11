@@ -618,6 +618,57 @@ systemctl start mem-webservice
 cp /opt/mem/mem.db /opt/mem/mem.db.bak-$(date +%F)
 ```
 
+### 6.1 日志轮转（logrotate）
+
+**为什么需要**：`/root/nginx-proxy/logs/` 下的日志默认只增不减（部署时无任何轮转配置）。其中：
+
+- `mem.access.log`（fail2ban 监控）会随 Web 控制台轮询增长——页面每 ~3 秒请求一次，实测约 **6 MB/天**（浏览器一直开着控制台时）；
+- `access.log` / `error.log` 也会持续累积（本环境部署时已分别达到 135 MB / 61 MB）。
+
+**配置文件：`/etc/logrotate.d/nginx-proxy`**
+
+```ini
+/root/nginx-proxy/logs/access.log
+/root/nginx-proxy/logs/error.log
+/root/nginx-proxy/logs/mem.access.log {
+    daily
+    maxsize 20M
+    rotate 14
+    dateext
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    su root root
+    sharedscripts
+    postrotate
+        docker exec nginx-3xui-proxy nginx -s reopen >/dev/null || true
+    endscript
+}
+```
+
+| 项 | 说明 |
+| :-- | :-- |
+| 轮转对象 | `access.log`、`error.log`、`mem.access.log` |
+| 不轮转 | `3xui-8443.access.log`（不是 nginx 写的，疑似 x-ui 直写且长期不增长，避免其持有旧 fd 继续写重命名后的文件） |
+| 策略 | 每天 00:00（`logrotate.timer`）+ 超过 20M 提前轮转；保留 14 份；gzip 压缩（最近一份延迟压缩） |
+| 重开方式 | rename + create 后用 `nginx -s reopen` 让容器内 nginx 重开新文件；比 `copytruncate` 更安全，不丢日志行 |
+| fail2ban | `mem.access.log` 轮转后 inode 变化，fail2ban(pyinotify) 会自动重新打开，无需额外 reload |
+
+**验证/手动轮转**：
+
+```bash
+logrotate -d  /etc/logrotate.d/nginx-proxy   # 干跑检查配置
+logrotate -vf /etc/logrotate.d/nginx-proxy   # 强制轮转一次
+ls -lh /root/nginx-proxy/logs/               # 应出现 access.log-YYYYMMDD / *.gz
+curl -sk https://mem.example.com:8444/api/v1/ping >/dev/null   # 触发新写入
+tail -1 /root/nginx-proxy/logs/mem.access.log            # 确认新文件在写（而不是旧文件）
+fail2ban-client status mem-web                           # 确认仍在跟踪 mem.access.log
+```
+
+> 注：轮转后新日志文件的属主是容器内 nginx 用户（主机上显示为 `systemd-resolve`，uid 101），这是 nginx worker 重开日志的正常表现，nginx 可正常写入，无需调整。
+
 ---
 
 ## 七、回滚
