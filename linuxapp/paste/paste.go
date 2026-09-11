@@ -12,6 +12,10 @@ func SimulatePaste() error {
 	// Give a slight delay (50ms) to ensure clipboard buffer is fully registered
 	time.Sleep(50 * time.Millisecond)
 
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		os.Setenv("DISPLAY", ":0")
+	}
+
 	isWayland := os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_SESSION_TYPE") == "wayland"
 
 	if isWayland {
