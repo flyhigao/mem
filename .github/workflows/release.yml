@@ -24,27 +24,39 @@ jobs:
       - name: Build Web Service Binaries
         run: |
           mkdir -p dist
+          cd webservice
+          go mod tidy
+          go mod download
           
           # Linux amd64
-          cd webservice
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-amd64 main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-amd64 .
           
           # Linux arm64
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-arm64 main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-arm64 .
           
           # Darwin (macOS) arm64
-          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-darwin-arm64 main.go
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-darwin-arm64 .
+          
+          # Darwin (macOS) amd64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-darwin-amd64 .
           
           # Windows amd64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-windows-amd64.exe main.go
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-windows-amd64.exe .
           
           cd ..
 
       - name: Build Linux Client Binaries
         run: |
           cd linuxapp
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-amd64 main.go
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-arm64 main.go
+          go mod tidy
+          go mod download
+          
+          # Linux amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-amd64 .
+          
+          # Linux arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-arm64 .
+          
           cd ..
 
       - name: Package artifacts
@@ -53,7 +65,8 @@ jobs:
           tar -czf mem-server-linux-amd64.tar.gz mem-server-linux-amd64
           tar -czf mem-server-linux-arm64.tar.gz mem-server-linux-arm64
           tar -czf mem-server-darwin-arm64.tar.gz mem-server-darwin-arm64
-          zip mem-server-windows-amd64.zip mem-server-windows-amd64.exe
+          tar -czf mem-server-darwin-amd64.tar.gz mem-server-darwin-amd64
+          zip -9 mem-server-windows-amd64.zip mem-server-windows-amd64.exe
           
           tar -czf mem-client-linux-amd64.tar.gz mem-client-linux-amd64
           tar -czf mem-client-linux-arm64.tar.gz mem-client-linux-arm64
