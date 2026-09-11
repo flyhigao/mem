@@ -29,16 +29,33 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
-	port := flag.String("port", "8080", "HTTP server port")
+	addrFlag := flag.String("addr", "", "Server listen address (e.g. 127.0.0.1:48081 or :8080)")
+	hostFlag := flag.String("host", "", "Server listen host (e.g. 127.0.0.1 or 0.0.0.0)")
+	portFlag := flag.String("port", "8080", "HTTP server port")
 	dbPath := flag.String("db", "mem.db", "SQLite database file path")
 	flag.Parse()
 
 	// Environment variable overrides
+	if envAddr := os.Getenv("ADDR"); envAddr != "" {
+		*addrFlag = envAddr
+	}
+	if envHost := os.Getenv("HOST"); envHost != "" {
+		*hostFlag = envHost
+	}
 	if envPort := os.Getenv("PORT"); envPort != "" {
-		*port = envPort
+		*portFlag = envPort
 	}
 	if envDB := os.Getenv("DB_PATH"); envDB != "" {
 		*dbPath = envDB
+	}
+
+	finalAddr := ""
+	if *addrFlag != "" {
+		finalAddr = *addrFlag
+	} else if *hostFlag != "" {
+		finalAddr = fmt.Sprintf("%s:%s", *hostFlag, strings.TrimPrefix(*portFlag, ":"))
+	} else {
+		finalAddr = fmt.Sprintf(":%s", strings.TrimPrefix(*portFlag, ":"))
 	}
 
 	log.Printf("⚡ Initializing Mem Web Service...")
@@ -112,9 +129,8 @@ func main() {
 	// Wrap with CORS middleware
 	handler := corsMiddleware(mux)
 
-	addr := fmt.Sprintf(":%s", strings.TrimPrefix(*port, ":"))
-	log.Printf("🚀 Mem Web Service running at http://0.0.0.0%s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	log.Printf("🚀 Mem Web Service running at http://%s", finalAddr)
+	if err := http.ListenAndServe(finalAddr, handler); err != nil {
 		log.Fatalf("❌ Server failed: %v", err)
 	}
 }
