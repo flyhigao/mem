@@ -1,0 +1,76 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Web Service Binaries
+        run: |
+          mkdir -p dist
+          
+          # Linux amd64
+          cd webservice
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-amd64 main.go
+          
+          # Linux arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-linux-arm64 main.go
+          
+          # Darwin (macOS) arm64
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-server-darwin-arm64 main.go
+          
+          # Windows amd64
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-server-windows-amd64.exe main.go
+          
+          cd ..
+
+      - name: Build Linux Client Binaries
+        run: |
+          cd linuxapp
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-amd64 main.go
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o ../dist/mem-client-linux-arm64 main.go
+          cd ..
+
+      - name: Package artifacts
+        run: |
+          cd dist
+          tar -czf mem-server-linux-amd64.tar.gz mem-server-linux-amd64
+          tar -czf mem-server-linux-arm64.tar.gz mem-server-linux-arm64
+          tar -czf mem-server-darwin-arm64.tar.gz mem-server-darwin-arm64
+          zip mem-server-windows-amd64.zip mem-server-windows-amd64.exe
+          
+          tar -czf mem-client-linux-amd64.tar.gz mem-client-linux-amd64
+          tar -czf mem-client-linux-arm64.tar.gz mem-client-linux-arm64
+          
+          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
+          cd ..
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+            dist/mem-server-linux-amd64
+            dist/mem-client-linux-amd64
+          draft: false
+          prerelease: false
+          generate_release_notes: true
