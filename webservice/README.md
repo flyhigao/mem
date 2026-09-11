@@ -4,24 +4,43 @@
 
 ---
 
-## 一、编译与部署
+## 一、下载安装（推荐直接从 Release 获取）
 
-### 1. 编译静态二进制文件（零外部依赖）
+每次发布新版本时，GitHub Actions 会自动编译多架构无依赖二进制文件。
 
-在任意安装了 Go 1.22+ 的机器上编译：
-
+### 1. Linux x86_64 / amd64（主流云服务器 / VPS）
 ```bash
-cd webservice
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mem-server main.go
+sudo mkdir -p /opt/mem && cd /opt/mem
+
+# 下载最新版本二进制并赋予权限
+sudo curl -fL -o /opt/mem/mem-server https://github.com/flyhigao/mem/releases/latest/download/mem-server-linux-amd64
+sudo chmod +x /opt/mem/mem-server
 ```
 
-编译完成后，只需将得到的单个文件 `mem-server` 复制到目标服务器即可，无需安装其他任何环境。
+### 2. Linux ARM64（甲骨文 ARM、树莓派、鲲鹏等）
+```bash
+sudo mkdir -p /opt/mem && cd /opt/mem
+
+# 下载最新版本并解压
+sudo curl -fL -o mem-server.tar.gz https://github.com/flyhigao/mem/releases/latest/download/mem-server-linux-arm64.tar.gz
+sudo tar -xzf mem-server.tar.gz
+sudo mv mem-server-linux-arm64 /opt/mem/mem-server
+sudo chmod +x /opt/mem/mem-server
+sudo rm -f mem-server.tar.gz
+```
+
+> **可选：源码编译（备用方式）**
+> ```bash
+> git clone https://github.com/flyhigao/mem.git
+> cd mem/webservice
+> CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /opt/mem/mem-server .
+> ```
 
 ---
 
 ## 二、运行参数与环境变量
 
-可以通过命令行参数或环境变量指定监听地址与数据库路径：
+可直接通过命令行参数或环境变量控制服务监听地址与数据库路径：
 
 | 命令行参数 | 环境变量 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
@@ -30,27 +49,26 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mem-server ma
 | `-port` | `PORT` | `8080` | 监听端口 |
 | `-db` | `DB_PATH` | `mem.db` | SQLite 数据库存储路径 |
 
-### 本地监听示例（用于 Nginx 反向代理）
+### 测试运行（监听 127.0.0.1:48081）
 ```bash
-./mem-server -addr 127.0.0.1:48081 -db /opt/mem/mem.db
+/opt/mem/mem-server -addr 127.0.0.1:48081 -db /opt/mem/mem.db
 ```
 
 ---
 
-## 三、使用 Systemd 守护进程托管
-
-推荐使用 systemd 管理进程，确保开机自启与异常重启：
+## 三、Systemd 守护进程托管（开机自启）
 
 创建服务文件 `/etc/systemd/system/mem-webservice.service`：
 
-```ini
+```bash
+sudo cat << 'EOF' > /etc/systemd/system/mem-webservice.service
 [Unit]
 Description=Mem Web Relay Service
 After=network.target
 
 [Service]
 Type=simple
-User=www-data
+User=root
 WorkingDirectory=/opt/mem
 ExecStart=/opt/mem/mem-server -addr 127.0.0.1:48081 -db /opt/mem/mem.db
 Restart=always
@@ -58,9 +76,10 @@ RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
-激活并启动服务：
+启动并设置开机自启：
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now mem-webservice.service
@@ -69,26 +88,22 @@ sudo systemctl status mem-webservice.service
 
 ---
 
-## 四、Nginx 反向代理配置
+## 四、Nginx 反向代理配置样例
 
-在目标服务器的 Nginx 配置文件（例如 `/etc/nginx/sites-available/mem.conf` 或 `conf.d/mem.conf`）中添加：
+在 Nginx 的站点配置中（如 `/etc/nginx/conf.d/mem.conf` 或 `/etc/nginx/sites-available/mem.conf`）添加：
 
 ```nginx
 server {
     listen 80;
-    server_name mem.yourdomain.com; # 替换为你的域名或 IP
+    server_name mem.yourdomain.com; # 替换为你的域名或公网 IP
 
-    # 如果有 SSL 证书（推荐 HTTPS）：
-    # listen 443 ssl http2;
-    # ssl_certificate /path/to/fullchain.pem;
-    # ssl_certificate_key /path/to/privkey.pem;
-
+    # 允许传输的单次请求最大体积
     client_max_body_size 10M;
 
     location / {
         proxy_pass http://127.0.0.1:48081;
         
-        # 基础代理标头
+        # 传递真实请求头
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -99,7 +114,7 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
 
-        # 禁用代理缓冲以确保极低延迟
+        # 禁用反代缓冲，保证极低延迟
         proxy_buffering off;
         proxy_read_timeout 60s;
     }
@@ -111,3 +126,5 @@ server {
 sudo nginx -t
 sudo nginx -s reload
 ```
+
+部署完成后，即可在外网直接通过 `http://mem.yourdomain.com` 访问中转控制台，并在 Android APP 和 Linux 客户端中配置该地址。
