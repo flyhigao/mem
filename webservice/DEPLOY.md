@@ -676,3 +676,70 @@ rm -rf /opt/mem
 | fail2ban filter | `/etc/fail2ban/filter.d/mem-web.conf` |
 | fail2ban jail | `/etc/fail2ban/jail.d/mem-web.conf` |
 | 8444 访问日志（供 fail2ban） | `/root/nginx-proxy/logs/mem.access.log` |
+
+---
+
+## 十、附录：后续新增 FRPC 服务（沿用原流程）
+
+> 适用于：**运行在内网、通过 frpc 隧道**暴露的新服务。
+> mem 本身是"本机 + 8444 专用入口"的特例，**不要**按本章操作（详见第八节第 7 条）。
+
+本方案只新增了 mem 自己的独立入口，**没有改动** frps 那条链路，因此新服务仍然沿用原来的老流程。
+
+### 10.1 标准步骤
+
+1. **域名解析**：域名商把新域名 A 记录指向 `<SERVER_PUBLIC_IP>`（若 `*.example.com` 已有泛解析则跳过）。
+
+2. **内网 `frpc.toml` 新增一段 proxy**（`name` 全局唯一）：
+
+   ```toml
+   [[proxies]]
+   name = "新服务名"
+   type = "http"
+   localIP = "127.0.0.1"
+   localPort = 12345
+   customDomains = ["new.example.com"]
+   ```
+
+   生效：配了 `webServer` 时用 `frpc reload -c ./frpc.toml` 热加载；否则 `systemctl restart frpc`（会让该 frpc 上**所有**隧道瞬断重连几秒）。
+
+3. **云端 `nginx.conf` 追加域名**：找到 `http {}` 中的 **frps 那个 server 块**（特征：`server_name zxai.example.com claw.example.com ...` 开头、`proxy_pass http://frps_backend;`），把新域名空格追加到 `server_name` 末尾：
+
+   ```nginx
+   server_name zxai.example.com claw.example.com aiapi.example.com trans.example.com study.example.com dsh.example.com daka.example.com new.example.com;
+   ```
+
+4. **生效（先备份）**：
+
+   ```bash
+   cd /root/nginx-proxy/conf
+   cp -a nginx.conf "nginx.conf.bak-$(date +%F_%H%M%S)"
+   docker exec nginx-3xui-proxy nginx -t
+   docker exec nginx-3xui-proxy nginx -s reload     # 不要用 compose restart
+   ```
+
+5. **验证**：
+
+   ```bash
+   curl -sk --resolve new.example.com:443:127.0.0.1 https://new.example.com/ -o /dev/null -w '%{http_code}\n'
+   # frps Dashboard（127.0.0.1:37500）确认新 proxy 已注册
+   journalctl -u frps -n 20 | grep new.example.com    # 云端 frps 侧日志
+   ```
+
+### 10.2 四个前提 / 注意事项
+
+| # | 事项 | 说明 |
+| :-- | :-- | :-- |
+| 1 | **域名必须是 `*.example.com`** | 443 的 SNI map 只把 `~.*\.codet\.net$` 路由到 18443（frps 这套）；其它域名会命中 `default → xhttp_service`（xray），需要额外加 stream map 条目 + 证书 + server 块 |
+| 2 | **共享该块的全局限速** | 该块有 `client_max_body_size 128m`、`limit_req zone=llm_api burst=80 nodelay`（30r/s）、`limit_conn llm_conn 40`。因 443 未传 PROXY protocol，18443 看到的客户端恒为 `127.0.0.1`，这些限制实际上是**所有域名、所有客户端共用一个桶**；新服务流量大时会和 LLM 服务互相挤占（429/503） |
+| 3 | **拿不到真实客户端 IP** | 这条链路（443→18443）日志恒为 `127.0.0.1`，**无法做按 IP 的 fail2ban**；要真实 IP 就仿照 mem 走"专用端口 + PROXY protocol"方案（第四、五章） |
+| 4 | **生效一律 reload** | 443 的 stream 同时承载 xray 分流，`docker compose restart` 会瞬断全部 443 连接 |
+
+### 10.3 什么时候不要只加 `server_name`
+
+| 新服务特征 | 建议做法 |
+| :-- | :-- |
+| 普通轻量服务（`*.example.com`、走 frps、流量小） | ✅ 按 10.1 老流程，加域名即可 |
+| 大流量 / 上传大文件 / 并发高 | ⚠️ 单独建一个 server 块（参考 4.3.4，去掉 `limit_req`/`limit_conn`），避免与 LLM 抢额度 |
+| 需要真实客户端 IP / 需要 fail2ban 按 IP 封禁 | ⚠️ 走 mem 同款"专用端口 + PROXY protocol + 独立 access_log + fail2ban"方案 |
+| 非 `*.example.com` 域名 | ⚠️ 需改 stream map + 证书 + server 块，改动较大，先评估 |
