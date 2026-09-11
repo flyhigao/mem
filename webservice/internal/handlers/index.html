@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mem - 跨端文本中转站</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --card-hover: #273549;
+            --border-color: #334155;
+            --primary: #38bdf8;
+            --primary-hover: #0ea5e9;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --danger: #f43f5e;
+            --danger-hover: #e11d48;
+            --success: #10b981;
+            --accent: #818cf8;
+            --radius: 12px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-color: #f1f5f9;
+                --card-bg: #ffffff;
+                --card-hover: #f8fafc;
+                --border-color: #e2e8f0;
+                --primary: #0284c7;
+                --primary-hover: #0369a1;
+                --text-main: #0f172a;
+                --text-muted: #64748b;
+                --danger: #ef4444;
+                --danger-hover: #dc2626;
+                --success: #059669;
+                --accent: #6366f1;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 16px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 860px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+        }
+
+        .logo {
+            font-size: 1.3rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--primary);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+            border-radius: 9999px;
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--primary);
+            font-weight: 500;
+        }
+
+        /* Card common */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Buttons & Inputs */
+        button, .btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 9px 16px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.9rem;
+        }
+
+        button:hover, .btn:hover {
+            background: var(--primary-hover);
+        }
+
+        button.btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+        }
+
+        button.btn-secondary:hover {
+            background: var(--card-hover);
+        }
+
+        button.btn-danger {
+            background: transparent;
+            color: var(--danger);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+        }
+
+        button.btn-danger:hover {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        input[type="text"], input[type="password"], textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-color);
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, textarea:focus {
+            border-color: var(--primary);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 90px;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+
+        /* Auth Form */
+        .auth-container {
+            max-width: 400px;
+            margin: 60px auto 0;
+            width: 100%;
+        }
+
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .auth-tab {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .auth-tab.active {
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* Message List */
+        .list-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .message-item {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            transition: transform 0.15s, border-color 0.15s;
+            position: relative;
+        }
+
+        .message-item:hover {
+            border-color: var(--primary);
+        }
+
+        .message-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .message-tags {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .tag {
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .tag-android { background: #059669; color: #fff; }
+        .tag-linux { background: #f59e0b; color: #fff; }
+        .tag-web { background: #3b82f6; color: #fff; }
+        .tag-api { background: #8b5cf6; color: #fff; }
+
+        .message-content {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            user-select: text;
+        }
+
+        .message-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            justify-content: flex-end;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            width: 90%;
+            max-width: 600px;
+            padding: 24px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .token-item {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .token-val {
+            font-family: monospace;
+            font-size: 0.85rem;
+            background: rgba(0,0,0,0.2);
+            padding: 3px 6px;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: #1e293b;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--primary);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            font-size: 0.9rem;
+            animation: slideIn 0.2s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Auth Section -->
+    <div id="authSection" class="auth-container card" style="display: none;">
+        <div class="logo" style="justify-content: center; margin-bottom: 20px;">
+            ⚡ Mem 跨端文本中转
+        </div>
+        <div class="auth-tabs">
+            <div class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</div>
+            <div class="auth-tab" id="tabRegister" onclick="switchAuthTab('register')">注册</div>
+        </div>
+
+        <form id="authForm" onsubmit="handleAuthSubmit(event)">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" id="authUsername" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" id="authPassword" required autocomplete="current-password">
+            </div>
+            <div id="authError" style="color: var(--danger); font-size: 0.85rem; margin-bottom: 12px; display: none;"></div>
+            <button type="submit" style="width: 100%; justify-content: center;" id="authSubmitBtn">登录</button>
+        </form>
+    </div>
+
+    <!-- Main App Section -->
+    <div id="appSection" style="display: none; width: 100%;">
+        <!-- Header -->
+        <header>
+            <div class="logo">⚡ Mem</div>
+            <div class="header-actions">
+                <span class="badge" id="userBadge">用户</span>
+                <button class="btn-secondary btn-sm" onclick="openTokenModal()">🔑 Token 管理</button>
+                <button class="btn-secondary btn-sm" onclick="handleLogout()">退出</button>
+            </div>
+        </header>
+
+        <!-- Send Box -->
+        <div class="card" style="margin-top: 16px;">
+            <div style="font-weight: 600; margin-bottom: 10px; font-size: 0.95rem;">📝 快速发送文本</div>
+            <textarea id="messageInput" placeholder="输入要中转的文本内容... (Ctrl + Enter 快速发送)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.keyCode===13){sendMessage();}"></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                <div style="font-size: 0.8rem; color: var(--text-muted);">
+                    支持多行文本，发送后其他设备立即可读
+                </div>
+                <button onclick="sendMessage()">🚀 发送</button>
+            </div>
+        </div>
+
+        <!-- History List -->
+        <div class="card" style="margin-top: 16px;">
+            <div class="list-header">
+                <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+                    📋 消息历史 (保留最新 500 条)
+                    <span id="msgCountBadge" class="badge">0 条</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted);">
+                        <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh(this.checked)">
+                        自动刷新 (3s)
+                    </label>
+                    <button class="btn-secondary btn-sm" onclick="loadMessages()">🔄 刷新</button>
+                </div>
+            </div>
+
+            <div id="messageList">
+                <div class="empty-state">加载中...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Token Management Modal -->
+<div id="tokenModal" class="modal-overlay" style="display: none;" onclick="if(event.target===this)closeTokenModal();">
+    <div class="modal">
+        <div class="modal-header">
+            <div style="font-weight: 700; font-size: 1.1rem;">🔑 API Token 管理</div>
+            <button class="btn-secondary btn-sm" onclick="closeTokenModal()">✕</button>
+        </div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 16px;">
+            Token 用于 Android 手机 APP、Linux 客户端等组件鉴权，隔离各用户数据。
+        </p>
+
+        <!-- Create Token -->
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+            <input type="text" id="newTokenName" placeholder="Token 名称 (如: OnePlus 13, Linux Desktop)" style="flex: 1;">
+            <button onclick="createToken()">+ 新建 Token</button>
+        </div>
+
+        <!-- Token List -->
+        <div id="tokenList">
+            <div class="empty-state">加载中...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentAuthMode = 'login';
+    let currentUser = null;
+    let autoRefreshInterval = null;
+
+    // Toast
+    function showToast(msg) {
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 2500);
+    }
+
+    // Copy to clipboard
+    function copyText(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('✅ 已复制到剪贴板');
+        }).catch(err => {
+            const input = document.createElement('textarea');
+            input.value = text;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand('copy');
+            document.body.removeChild(input);
+            showToast('✅ 已复制到剪贴板');
+        });
+    }
+
+    // Auth tabs
+    function switchAuthTab(mode) {
+        currentAuthMode = mode;
+        document.getElementById('tabLogin').className = 'auth-tab ' + (mode === 'login' ? 'active' : '');
+        document.getElementById('tabRegister').className = 'auth-tab ' + (mode === 'register' ? 'active' : '');
+        document.getElementById('authSubmitBtn').innerText = mode === 'login' ? '登录' : '注册';
+        document.getElementById('authError').style.display = 'none';
+    }
+
+    // Check login state
+    async function checkAuth() {
+        try {
+            const res = await fetch('/web/api/me');
+            const data = await res.json();
+            if (data.success && data.data) {
+                currentUser = data.data;
+                document.getElementById('authSection').style.display = 'none';
+                document.getElementById('appSection').style.display = 'block';
+                document.getElementById('userBadge').innerText = '👤 ' + currentUser.username;
+                loadMessages();
+                toggleAutoRefresh(true);
+            } else {
+                showAuth();
+            }
+        } catch (e) {
+            showAuth();
+        }
+    }
+
+    function showAuth() {
+        document.getElementById('authSection').style.display = 'block';
+        document.getElementById('appSection').style.display = 'none';
+        toggleAutoRefresh(false);
+    }
+
+    async function handleAuthSubmit(e) {
+        e.preventDefault();
+        const username = document.getElementById('authUsername').value.trim();
+        const password = document.getElementById('authPassword').value;
+        const errEl = document.getElementById('authError');
+        errEl.style.display = 'none';
+
+        const endpoint = currentAuthMode === 'login' ? '/web/api/login' : '/web/api/register';
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (data.success) {
+                checkAuth();
+            } else {
+                errEl.innerText = data.error || '操作失败';
+                errEl.style.display = 'block';
+            }
+        } catch (err) {
+            errEl.innerText = '网络请求失败';
+            errEl.style.display = 'block';
+        }
+    }
+
+    async function handleLogout() {
+        await fetch('/web/api/logout', { method: 'POST' });
+        currentUser = null;
+        showAuth();
+    }
+
+    // Messages
+    async function loadMessages() {
+        try {
+            const res = await fetch('/web/api/messages?limit=100');
+            const data = await res.json();
+            if (data.success) {
+                renderMessages(data.data || []);
+            }
+        } catch (e) {
+            console.error('Failed to load messages', e);
+        }
+    }
+
+    function renderMessages(list) {
+        const container = document.getElementById('messageList');
+        document.getElementById('msgCountBadge').innerText = list.length + ' 条';
+
+        if (list.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无消息，赶快发送一条吧！</div>';
+            return;
+        }
+
+        container.innerHTML = list.map(m => {
+            const timeStr = new Date(m.created_at).toLocaleString();
+            const src = (m.source || 'web').toLowerCase();
+            let srcClass = 'tag-api';
+            if (src.includes('android') || src.includes('phone')) srcClass = 'tag-android';
+            else if (src.includes('linux')) srcClass = 'tag-linux';
+            else if (src.includes('web')) srcClass = 'tag-web';
+
+            const tokenTag = m.token_name ? `<span class="badge" style="font-size: 0.7rem;">🔑 ${escapeHtml(m.token_name)}</span>` : '';
+
+            return `
+                <div class="message-item" id="msg-${m.id}">
+                    <div class="message-meta">
+                        <div class="message-tags">
+                            <span class="tag ${srcClass}">${escapeHtml(m.source || 'web')}</span>
+                            ${tokenTag}
+                        </div>
+                        <div>${timeStr}</div>
+                    </div>
+                    <div class="message-content">${escapeHtml(m.content)}</div>
+                    <div class="message-actions">
+                        <button class="btn-secondary btn-sm" onclick="copyText(${JSON.stringify(m.content)})">📋 复制</button>
+                        <button class="btn-danger btn-sm" onclick="deleteMessage(${m.id})">🗑️ 删除</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+        if (!content) return;
+
+        try {
+            const res = await fetch('/web/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, source: 'web' })
+            });
+            const data = await res.json();
+            if (data.success) {
+                input.value = '';
+                showToast('🚀 发送成功');
+                loadMessages();
+            } else {
+                showToast('❌ 发送失败: ' + data.error);
+            }
+        } catch (e) {
+            showToast('❌ 网络错误');
+        }
+    }
+
+    async function deleteMessage(id) {
+        if (!confirm('确定删除此条消息吗？')) return;
+        try {
+            const res = await fetch('/web/api/messages/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('🗑️ 已删除');
+                loadMessages();
+            }
+        } catch (e) {
+            showToast('❌ 删除失败');
+        }
+    }
+
+    function toggleAutoRefresh(enable) {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
+        }
+        if (enable) {
+            autoRefreshInterval = setInterval(() => {
+                loadMessages();
+            }, 3000);
+        }
+    }
+
+    // Token Modal
+    async function openTokenModal() {
+        document.getElementById('tokenModal').style.display = 'flex';
+        loadTokens();
+    }
+
+    function closeTokenModal() {
+        document.getElementById('tokenModal').style.display = 'none';
+    }
+
+    async function loadTokens() {
+        const container = document.getElementById('tokenList');
+        try {
+            const res = await fetch('/web/api/tokens');
+            const data = await res.json();
+            if (data.success) {
+                const list = data.data || [];
+                if (list.length === 0) {
+                    container.innerHTML = '<div class="empty-state">暂无 Token，请新建一个以供 Android / Linux 端使用</div>';
+                    return;
+                }
+                container.innerHTML = list.map(t => {
+                    const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleString() : '从未使用';
+                    return `
+                        <div class="token-item">
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 4px;">🏷️ ${escapeHtml(t.name)}</div>
+                                <div class="token-val">${escapeHtml(t.token)}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">最后使用: ${lastUsed}</div>
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-shrink: 0;">
+                                <button class="btn-secondary btn-sm" onclick="copyText('${t.token}')">复制</button>
+                                <button class="btn-danger btn-sm" onclick="deleteToken(${t.id})">删除</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+        } catch (e) {
+            container.innerHTML = '<div class="empty-state">加载失败</div>';
+        }
+    }
+
+    async function createToken() {
+        const nameInput = document.getElementById('newTokenName');
+        const name = nameInput.value.trim() || '默认设备';
+        try {
+            const res = await fetch('/web/api/tokens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.success) {
+                nameInput.value = '';
+                showToast('🔑 Token 创建成功');
+                loadTokens();
+            } else {
+                showToast('❌ 创建失败: ' + data.error);
+            }
+        } catch (e) {
+            showToast('❌ 请求失败');
+        }
+    }
+
+    async function deleteToken(id) {
+        if (!confirm('确定删除该 Token 吗？使用该 Token 的设备将无法继续连接。')) return;
+        try {
+            const res = await fetch('/web/api/tokens/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('🗑️ Token 已删除');
+                loadTokens();
+            }
+        } catch (e) {
+            showToast('❌ 删除失败');
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    // Init
+    checkAuth();
+</script>
+</body>
+</html>

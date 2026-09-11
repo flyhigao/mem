@@ -1,0 +1,27 @@
+# Build & Binaries
+*/mem-server
+*/mem-client
+*.exe
+*.o
+*.a
+*.so
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Android & Gradle
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+.vscode/
+*.apk
+*.aab
+
+# OS
+.DS_Store
+Thumbs.db
