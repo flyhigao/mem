@@ -98,27 +98,27 @@ log_step "2. 部署客户端二进制 (mem-client)"
 TARGET_BIN="$BIN_DIR/mem-client"
 INSTALLED=false
 
-if [ -f "$SCRIPT_DIR/mem-client" ] && file "$SCRIPT_DIR/mem-client" | grep -q "ELF"; then
-    log_info "发现本地已编译的二进制，直接安装..."
-    cp -f "$SCRIPT_DIR/mem-client" "$TARGET_BIN"
+GO_CMD=""
+if command -v go >/dev/null 2>&1; then
+    GO_CMD="go"
+elif [ -x "$HOME/.go/bin/go" ]; then
+    GO_CMD="$HOME/.go/bin/go"
+fi
+
+# 优先：如果有 Go 环境，编译最新源码
+if [ -n "$GO_CMD" ]; then
+    log_info "使用本地 Go 环境 ($GO_CMD) 编译最新源码..."
+    (cd "$SCRIPT_DIR" && CGO_ENABLED=0 "$GO_CMD" build -ldflags="-s -w" -o "$TARGET_BIN" .)
     chmod +x "$TARGET_BIN"
     INSTALLED=true
 fi
 
-if [ "$INSTALLED" = false ]; then
-    GO_CMD=""
-    if command -v go >/dev/null 2>&1; then
-        GO_CMD="go"
-    elif [ -x "$HOME/.go/bin/go" ]; then
-        GO_CMD="$HOME/.go/bin/go"
-    fi
-
-    if [ -n "$GO_CMD" ]; then
-        log_info "使用本地 Go 环境 ($GO_CMD) 从源码编译..."
-        (cd "$SCRIPT_DIR" && CGO_ENABLED=0 "$GO_CMD" build -ldflags="-s -w" -o "$TARGET_BIN" .)
-        chmod +x "$TARGET_BIN"
-        INSTALLED=true
-    fi
+# 次优：如果本地有预编译的 ELF 二进制
+if [ "$INSTALLED" = false ] && [ -f "$SCRIPT_DIR/mem-client" ] && file "$SCRIPT_DIR/mem-client" | grep -q "ELF"; then
+    log_info "发现本地预编译二进制，直接安装..."
+    cp -f "$SCRIPT_DIR/mem-client" "$TARGET_BIN"
+    chmod +x "$TARGET_BIN"
+    INSTALLED=true
 fi
 
 if [ "$INSTALLED" = false ]; then
