@@ -12,11 +12,12 @@ import (
 )
 
 type APIHandler struct {
-	db *db.DB
+	db    *db.DB
+	wsHub *WSHub
 }
 
-func NewAPIHandler(database *db.DB) *APIHandler {
-	return &APIHandler{db: database}
+func NewAPIHandler(database *db.DB, wsHub *WSHub) *APIHandler {
+	return &APIHandler{db: database, wsHub: wsHub}
 }
 
 type APIResponse struct {
@@ -96,6 +97,10 @@ func (h *APIHandler) HandlePostMessage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to store message: "+err.Error())
 		return
+	}
+
+	if h.wsHub != nil {
+		h.wsHub.BroadcastToUser(userID, msg)
 	}
 
 	writeJSON(w, http.StatusCreated, APIResponse{

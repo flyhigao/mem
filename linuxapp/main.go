@@ -18,6 +18,7 @@ import (
 	"mem/linuxapp/client"
 	"mem/linuxapp/clipboard"
 	"mem/linuxapp/paste"
+	"mem/linuxapp/state"
 )
 
 const AppVersion = "v1.0.0"
@@ -99,6 +100,8 @@ func doPull(cfg client.Config, rawOutput bool) error {
 	if err != nil {
 		return fmt.Errorf("fetch error: %w", err)
 	}
+
+	state.RecordPull(msg.ID)
 
 	if rawOutput {
 		fmt.Print(msg.Content)
@@ -199,6 +202,8 @@ func doPush(cfg client.Config, text string, source string, forceClipboard bool) 
 	if err != nil {
 		return fmt.Errorf("push failed: %w", err)
 	}
+
+	state.RecordPush()
 
 	log.Printf("✅ Sent successfully (ID: %d, %d chars, source: %s)", msg.ID, len(text), source)
 
@@ -374,9 +379,10 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 		interval = cfg.GetPollInterval()
 	}
 
-	log.Printf("📡 Mem Daemon started. Polling %s every %v", cfg.ServerURL, interval)
+	log.Printf("📡 Mem Daemon started. Server: %s", cfg.ServerURL)
 	log.Printf("   Device Source: [%s] | Auto-Copy: %v | Notification: %v",
 		cfg.GetSource(), !noCopy, !noNotify && cfg.Notify)
+	log.Printf("   Smart Direct-to-Screen: Enabled within 10 mins of pull/push")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -388,48 +394,119 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 		log.Printf("   Baseline latest message ID: #%d", lastSeenID)
 	}
 
+	st := state.LoadState()
+	if st.LastSeenID > lastSeenID {
+		lastSeenID = st.LastSeenID
+	}
+
+	// Try WebSocket connection
+	var wsClient *client.WSClient
+	wsClient, err := client.ConnectWS(cfg.ServerURL, cfg.Token)
+	if err == nil {
+		log.Printf("🔌 Connected to WebSocket real-time stream")
+	} else {
+		log.Printf("⚠️ WebSocket stream not available (%v), using HTTP poll fallback (auto-retry WS every 15s)...", err)
+	}
+
+	defer func() {
+		if wsClient != nil {
+			wsClient.Close()
+		}
+	}()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	wsRetryTicker := time.NewTicker(15 * time.Second)
+	defer wsRetryTicker.Stop()
+
+	handleNewMessage := func(msg *client.Message) {
+		if msg == nil || msg.ID <= lastSeenID {
+			return
+		}
+
+		prevID := lastSeenID
+		lastSeenID = msg.ID
+
+		// Skip messages published by this same device
+		if msg.Source == cfg.GetSource() {
+			state.RecordSeen(msg.ID)
+			return
+		}
+
+		log.Printf("📥 New message #%d received from [%s] (%d chars)",
+			msg.ID, msg.Source, len(msg.Content))
+
+		if !noCopy {
+			if err := clipboard.SetText(msg.Content); err != nil {
+				log.Printf("⚠️ Failed to write clipboard: %v", err)
+			} else {
+				log.Printf("📋 Copied to clipboard (%d chars)", len(msg.Content))
+			}
+		}
+
+		if !noNotify && cfg.Notify {
+			preview := msg.Content
+			if len(preview) > 60 {
+				preview = preview[:60] + "..."
+			}
+			client.SendNotification("Mem 跨端中转",
+				fmt.Sprintf("收到来自 [%s] 的文本:\n%s", msg.Source, preview))
+		}
+
+		// Check if eligible for direct-to-screen paste:
+		// 1. Within 10 minutes of last action (pull, push, auto_paste)
+		// 2. Previous message was pulled
+		if state.IsDirectPasteEligible(prevID) {
+			if err := paste.SimulatePaste(); err != nil {
+				log.Printf("⚠️ Direct paste warning: %v", err)
+			} else {
+				log.Printf("🚀 Direct to screen: Auto-pasted into active window (10-min active session)")
+				state.RecordAutoPaste(msg.ID)
+			}
+		} else {
+			log.Printf("ℹ️ Message ready in clipboard (direct paste idle: no pull/push in last 10 mins)")
+			state.RecordSeen(msg.ID)
+		}
+	}
+
 	for {
+		var wsChan <-chan *client.Message
+		if wsClient != nil {
+			wsChan = wsClient.Messages()
+		}
+
 		select {
 		case <-sigChan:
 			log.Println("🛑 Mem Daemon gracefully stopped.")
 			return nil
+
+		case msg, ok := <-wsChan:
+			if !ok {
+				log.Printf("⚠️ WebSocket connection closed, switching to poll fallback...")
+				if wsClient != nil {
+					wsClient.Close()
+					wsClient = nil
+				}
+				continue
+			}
+			handleNewMessage(msg)
+
+		case <-wsRetryTicker.C:
+			if wsClient == nil {
+				newWS, err := client.ConnectWS(cfg.ServerURL, cfg.Token)
+				if err == nil {
+					wsClient = newWS
+					log.Printf("🔌 WebSocket reconnected successfully!")
+				}
+			}
+
 		case <-ticker.C:
-			latest, err := c.FetchLatestMessage()
-			if err != nil {
-				continue
-			}
-			if latest == nil || latest.ID <= lastSeenID {
-				continue
-			}
-
-			lastSeenID = latest.ID
-
-			// Skip messages published by this same device
-			if latest.Source == cfg.GetSource() {
-				continue
-			}
-
-			log.Printf("📥 New message #%d received from [%s] (%d chars)",
-				latest.ID, latest.Source, len(latest.Content))
-
-			if !noCopy {
-				if err := clipboard.SetText(latest.Content); err != nil {
-					log.Printf("⚠️ Failed to write clipboard: %v", err)
-				} else {
-					log.Printf("📋 Auto-copied to clipboard")
+			if wsClient == nil {
+				latest, err := c.FetchLatestMessage()
+				if err == nil && latest != nil {
+					handleNewMessage(latest)
 				}
-			}
-
-			if !noNotify && cfg.Notify {
-				preview := latest.Content
-				if len(preview) > 60 {
-					preview = preview[:60] + "..."
-				}
-				client.SendNotification("Mem 跨端中转",
-					fmt.Sprintf("收到来自 [%s] 的文本:\n%s", latest.Source, preview))
 			}
 		}
 	}

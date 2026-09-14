@@ -68,7 +68,8 @@ func main() {
 	defer database.Close()
 
 	sessionManager := auth.NewSessionManager()
-	apiHandler := handlers.NewAPIHandler(database)
+	wsHub := handlers.NewWSHub(database)
+	apiHandler := handlers.NewAPIHandler(database, wsHub)
 	webHandler := handlers.NewWebHandler(database, sessionManager)
 
 	mux := http.NewServeMux()
@@ -107,6 +108,7 @@ func main() {
 	})
 
 	// REST API (Token-based) for Android App, Linux Client, etc.
+	mux.HandleFunc("/api/v1/ws", wsHub.HandleWS)
 	mux.HandleFunc("/api/v1/ping", apiHandler.Ping)
 	mux.HandleFunc("/api/v1/messages/latest", apiHandler.HandleGetLatestMessage)
 	mux.HandleFunc("/api/v1/messages", func(w http.ResponseWriter, r *http.Request) {
