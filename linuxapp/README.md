@@ -20,13 +20,30 @@ Mem 的 Linux 桌面端客户端，采用纯 Go 开发（零 CGO 动态库依赖
 
 ---
 
-## 二、安装与编译
+## 二、安装与部署
 
-### 1. 从源码编译
+### 1. 一键安装部署（强烈推荐）
+在本项目根目录直接执行一键安装脚本，自动完成依赖探测、编译/下载二进制、部署包装脚本、注册全局快捷键（Deepin DDE 自动注册，其他桌面提供指引）并启动 Systemd 后台守护服务：
+
 ```bash
 cd linuxapp
-go build -o mem-client main.go
-sudo cp mem-client /usr/local/bin/
+./install.sh
+```
+
+> **在线快速安装（无需克隆完整仓库）：**
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/flyhigao/mem/master/linuxapp/install.sh | bash
+> ```
+
+> **如需卸载：**
+> ```bash
+> ./install.sh --uninstall
+> ```
+
+### 2. 手动编译安装（备用方式）
+```bash
+cd linuxapp
+go build -ldflags="-s -w" -o ~/.local/bin/mem-client .
 ```
 
 ### 2. 依赖项推荐（可选）
