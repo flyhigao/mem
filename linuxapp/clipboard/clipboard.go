@@ -102,6 +102,41 @@ func GetText() (string, error) {
 	return "", fmt.Errorf("no clipboard tool found or clipboard is empty (tried wl-paste, xclip, xsel, python3)")
 }
 
+// GetPrimaryText reads text from system PRIMARY selection (mouse highlighted text)
+func GetPrimaryText() (string, error) {
+	ensureDisplayEnv()
+	wayland := isWayland()
+
+	if wayland {
+		if text, err := readWlPastePrimary(); err == nil && text != "" {
+			return text, nil
+		}
+	}
+
+	// Try xclip
+	if text, err := readXclipPrimary(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Try xsel
+	if text, err := readXselPrimary(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Try python3 GTK3
+	if text, err := readPythonGtkPrimary(); err == nil && text != "" {
+		return text, nil
+	}
+
+	if !wayland {
+		if text, err := readWlPastePrimary(); err == nil && text != "" {
+			return text, nil
+		}
+	}
+
+	return "", fmt.Errorf("no primary selection available")
+}
+
 func writeWlCopy(text string) error {
 	if _, err := exec.LookPath("wl-copy"); err != nil {
 		return err
@@ -201,6 +236,19 @@ func readWlPaste() (string, error) {
 	return stdout.String(), nil
 }
 
+func readWlPastePrimary() (string, error) {
+	if _, err := exec.LookPath("wl-paste"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("wl-paste", "--primary", "--no-newline")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
 func readXclip() (string, error) {
 	if _, err := exec.LookPath("xclip"); err != nil {
 		return "", err
@@ -214,11 +262,37 @@ func readXclip() (string, error) {
 	return stdout.String(), nil
 }
 
+func readXclipPrimary() (string, error) {
+	if _, err := exec.LookPath("xclip"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("xclip", "-selection", "primary", "-out")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
 func readXsel() (string, error) {
 	if _, err := exec.LookPath("xsel"); err != nil {
 		return "", err
 	}
 	cmd := exec.Command("xsel", "--clipboard", "--output")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readXselPrimary() (string, error) {
+	if _, err := exec.LookPath("xsel"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("xsel", "--primary", "--output")
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	if err := cmd.Run(); err != nil {
@@ -242,6 +316,37 @@ try:
     from gi.repository import Gtk, Gdk
     clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
     t = clip.wait_for_text()
+    if t is not None:
+        sys.stdout.write(t)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+`
+	cmd := exec.Command("python3", "-c", pyScript)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readPythonGtkPrimary() (string, error) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return "", err
+	}
+	pyScript := `
+import sys, os
+try:
+    null_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null_fd, 2)
+    os.close(null_fd)
+    import gi
+    gi.require_version('Gtk', '3.0')
+    from gi.repository import Gtk, Gdk
+    primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+    t = primary.wait_for_text()
     if t is not None:
         sys.stdout.write(t)
     else:

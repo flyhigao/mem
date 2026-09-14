@@ -150,13 +150,39 @@ func doPush(cfg client.Config, text string, source string, forceClipboard bool) 
 		}
 	}
 
-	// If still empty, read from system clipboard!
+	// If still empty (e.g. shortcut Super+C or bare 'mem-client push'):
+	// First copy selected text from the active window, then read clipboard / primary selection
 	if text == "" || forceClipboard {
-		clipText, err := clipboard.GetText()
-		if err != nil {
-			return fmt.Errorf("no text provided and failed to read clipboard: %w", err)
+		// 1. Get current clipboard and primary selection before simulating copy
+		oldClip, _ := clipboard.GetText()
+		primaryBefore, _ := clipboard.GetPrimaryText()
+
+		// 2. Simulate Ctrl+C on active window to copy whatever text is currently highlighted
+		_ = paste.SimulateCopy()
+
+		// 3. Get clipboard content after copy simulation
+		newClip, _ := clipboard.GetText()
+		primaryAfter, _ := clipboard.GetPrimaryText()
+
+		if newClip != "" && newClip != oldClip {
+			// Freshly copied text was captured in clipboard!
+			text = newClip
+		} else if primaryAfter != "" && primaryAfter != oldClip {
+			// Mouse selection was in primary buffer (e.g. terminal or app that didn't respond to Ctrl+C)
+			text = primaryAfter
+			_ = clipboard.SetText(primaryAfter)
+		} else if primaryBefore != "" && primaryBefore != oldClip {
+			// Primary selection from before copy
+			text = primaryBefore
+			_ = clipboard.SetText(primaryBefore)
+		} else if newClip != "" {
+			// Fallback to existing clipboard text
+			text = newClip
+		} else if primaryAfter != "" {
+			text = primaryAfter
+		} else {
+			return fmt.Errorf("no text provided and failed to read clipboard/selection")
 		}
-		text = clipText
 	}
 
 	trimmed := strings.TrimSpace(text)
