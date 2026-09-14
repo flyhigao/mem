@@ -8,22 +8,30 @@ import (
 	"strings"
 )
 
-// SetText writes text to system clipboard using available CLI tools
-func SetText(text string) error {
-	// If DISPLAY is not set in non-Wayland environment (e.g. invoked from SSH / background), fallback to :0
+// ensureDisplayEnv sets DISPLAY=:0 if both DISPLAY and WAYLAND_DISPLAY are empty
+func ensureDisplayEnv() {
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		os.Setenv("DISPLAY", ":0")
 	}
+}
 
-	isWayland := os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_SESSION_TYPE") == "wayland"
+// isWayland returns true if current session is Wayland
+func isWayland() bool {
+	return os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_SESSION_TYPE") == "wayland"
+}
 
-	if isWayland {
+// SetText writes text to system clipboard using available CLI tools
+func SetText(text string) error {
+	ensureDisplayEnv()
+	wayland := isWayland()
+
+	if wayland {
 		if err := writeWlCopy(text); err == nil {
 			return nil
 		}
 	}
 
-	// Try xclip
+	// Try xclip (standard X11)
 	if err := writeXclip(text); err == nil {
 		return nil
 	}
@@ -33,19 +41,65 @@ func SetText(text string) error {
 		return nil
 	}
 
-	// Try python3 tkinter (standard on almost all Linux desktop distros including Deepin)
+	// Try python3 GTK3 (supports clip.store() for clipboard persistence across process exits)
+	if err := writePythonGtk(text); err == nil {
+		return nil
+	}
+
+	// Try python3 tkinter fallback
 	if err := writePythonTk(text); err == nil {
 		return nil
 	}
 
 	// Fallback to wl-copy even if wayland env wasn't explicitly set
-	if !isWayland {
+	if !wayland {
 		if err := writeWlCopy(text); err == nil {
 			return nil
 		}
 	}
 
 	return fmt.Errorf("no clipboard tool found (please install xclip, xsel, or wl-clipboard)")
+}
+
+// GetText reads text from system clipboard using available CLI tools
+func GetText() (string, error) {
+	ensureDisplayEnv()
+	wayland := isWayland()
+
+	if wayland {
+		if text, err := readWlPaste(); err == nil && text != "" {
+			return text, nil
+		}
+	}
+
+	// Try xclip
+	if text, err := readXclip(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Try xsel
+	if text, err := readXsel(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Try python3 GTK3
+	if text, err := readPythonGtk(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Try python3 tkinter
+	if text, err := readPythonTk(); err == nil && text != "" {
+		return text, nil
+	}
+
+	// Fallback to wl-paste even if wayland env wasn't explicitly set
+	if !wayland {
+		if text, err := readWlPaste(); err == nil && text != "" {
+			return text, nil
+		}
+	}
+
+	return "", fmt.Errorf("no clipboard tool found or clipboard is empty (tried wl-paste, xclip, xsel, python3)")
 }
 
 func writeWlCopy(text string) error {
@@ -79,7 +133,32 @@ func writeXsel(text string) error {
 		return err
 	}
 	cmd := exec.Command("xsel", "--clipboard", "--input")
-	cmd.Stdin = bytes.NewReader([]byte(text))
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
+}
+
+func writePythonGtk(text string) error {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return err
+	}
+	pyScript := `
+import sys, os
+try:
+    null_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null_fd, 2)
+    os.close(null_fd)
+    import gi
+    gi.require_version('Gtk', '3.0')
+    from gi.repository import Gtk, Gdk
+    text = sys.stdin.read()
+    clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    clip.set_text(text, -1)
+    clip.store()
+except Exception:
+    sys.exit(1)
+`
+	cmd := exec.Command("python3", "-c", pyScript)
+	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
 }
 
@@ -88,16 +167,125 @@ func writePythonTk(text string) error {
 		return err
 	}
 	pyScript := `
-import sys, tkinter as tk
-text = sys.stdin.read()
-r = tk.Tk()
-r.withdraw()
-r.clipboard_clear()
-r.clipboard_append(text)
-r.update()
-r.destroy()
+import sys, os
+try:
+    null_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null_fd, 2)
+    os.close(null_fd)
+    import tkinter as tk
+    text = sys.stdin.read()
+    r = tk.Tk()
+    r.withdraw()
+    r.clipboard_clear()
+    r.clipboard_append(text)
+    r.update()
+    r.destroy()
+except Exception:
+    sys.exit(1)
 `
 	cmd := exec.Command("python3", "-c", pyScript)
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()
+}
+
+func readWlPaste() (string, error) {
+	if _, err := exec.LookPath("wl-paste"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("wl-paste", "--no-newline")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readXclip() (string, error) {
+	if _, err := exec.LookPath("xclip"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("xclip", "-selection", "clipboard", "-out")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readXsel() (string, error) {
+	if _, err := exec.LookPath("xsel"); err != nil {
+		return "", err
+	}
+	cmd := exec.Command("xsel", "--clipboard", "--output")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readPythonGtk() (string, error) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return "", err
+	}
+	pyScript := `
+import sys, os
+try:
+    null_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null_fd, 2)
+    os.close(null_fd)
+    import gi
+    gi.require_version('Gtk', '3.0')
+    from gi.repository import Gtk, Gdk
+    clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    t = clip.wait_for_text()
+    if t is not None:
+        sys.stdout.write(t)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+`
+	cmd := exec.Command("python3", "-c", pyScript)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
+}
+
+func readPythonTk() (string, error) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return "", err
+	}
+	pyScript := `
+import sys, os
+try:
+    null_fd = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(null_fd, 2)
+    os.close(null_fd)
+    import tkinter as tk
+    r = tk.Tk()
+    r.withdraw()
+    try:
+        t = r.clipboard_get()
+        sys.stdout.write(t)
+    except Exception:
+        sys.exit(1)
+    finally:
+        r.destroy()
+except Exception:
+    sys.exit(1)
+`
+	cmd := exec.Command("python3", "-c", pyScript)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return stdout.String(), nil
 }

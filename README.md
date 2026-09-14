@@ -47,11 +47,13 @@
 - 详细使用与快捷键配置文档请参阅：[`linuxapp/README.md`](linuxapp/README.md)
 - 技术栈：Go 单二进制文件（零外部 CGO 依赖）
 - 兼容性：
-  - 剪贴板写入：自动适配 `wl-clipboard` (Wayland) 或 `xclip` / `xsel` / `python3-tkinter` (X11)
+  - 剪贴板读写：自动适配 `wl-clipboard` (Wayland) 或 `xclip` / `xsel` / `python3-gi (GTK)` / `tkinter` (X11)
   - 模拟粘贴：支持 `xdotool`、`ydotool`、`wtype` 触发自动粘贴
   - 桌面通知：通过 `notify-send` 弹出内容预览
 - 使用方式：
   - 绑定系统快捷键（如 `Ctrl + Alt + V`）执行 `mem-client pull` 即可瞬间获取最新手机内容并自动粘贴。
+  - 绑定系统快捷键（如 `Ctrl + Alt + C`）执行 `mem-client push` 即可将电脑剪贴板一键推送至手机。
+  - 支持 `mem-client daemon` 后台常驻监听与实时同步。
 
 ### 3. `androidapp` (Android 手机客户端)
 - 实测设备：**一加 13 (PJZ110 / ColorOS 15 / Android 16)**
