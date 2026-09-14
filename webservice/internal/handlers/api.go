@@ -13,10 +13,10 @@ import (
 
 type APIHandler struct {
 	db    *db.DB
-	wsHub *WSHub
+	wsHub *StreamHub
 }
 
-func NewAPIHandler(database *db.DB, wsHub *WSHub) *APIHandler {
+func NewAPIHandler(database *db.DB, wsHub *StreamHub) *APIHandler {
 	return &APIHandler{db: database, wsHub: wsHub}
 }
 
