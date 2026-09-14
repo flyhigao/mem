@@ -189,6 +189,8 @@ try:
     clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
     clip.set_text(text, -1)
     clip.store()
+    primary = Gtk.Clipboard.get(Gdk.SELECTION_PRIMARY)
+    primary.set_text(text, -1)
 except Exception:
     sys.exit(1)
 `
