@@ -20,6 +20,7 @@ func isTerminalWindow() bool {
 			if err == nil {
 				classStr := strings.ToLower(string(propBytes))
 				terminals := []string{
+					"antigravity",
 					"wezterm",
 					"terminal",
 					"konsole",
@@ -34,6 +35,24 @@ func isTerminalWindow() bool {
 					"qterminal",
 					"terminator",
 					"st-256color",
+					"code",
+					"vscode",
+					"cursor",
+					"windsurf",
+					"vscodium",
+					"zed",
+					"jetbrains",
+					"idea",
+					"pycharm",
+					"clion",
+					"webstorm",
+					"goland",
+					"rider",
+					"datagrip",
+					"studio",
+					"guake",
+					"tilda",
+					"warp",
 				}
 				for _, t := range terminals {
 					if strings.Contains(classStr, t) {
@@ -49,7 +68,7 @@ func isTerminalWindow() bool {
 
 // SimulateCopy sends Ctrl+C to the active window to copy currently selected/highlighted text
 func SimulateCopy() error {
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		os.Setenv("DISPLAY", ":0")
@@ -61,14 +80,14 @@ func SimulateCopy() error {
 		if _, err := exec.LookPath("wtype"); err == nil {
 			cmd := exec.Command("wtype", "-M", "ctrl", "-k", "c", "-m", "ctrl")
 			if err := cmd.Run(); err == nil {
-				time.Sleep(80 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
 		}
 		if _, err := exec.LookPath("ydotool"); err == nil {
 			cmd := exec.Command("ydotool", "key", "29:1", "46:1", "46:0", "29:0")
 			if err := cmd.Run(); err == nil {
-				time.Sleep(80 * time.Millisecond)
+				time.Sleep(100 * time.Millisecond)
 				return nil
 			}
 		}
@@ -78,7 +97,7 @@ func SimulateCopy() error {
 	if _, err := exec.LookPath("xdotool"); err == nil {
 		cmd := exec.Command("xdotool", "key", "--clearmodifiers", "ctrl+c")
 		if err := cmd.Run(); err == nil {
-			time.Sleep(80 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			return nil
 		}
 	}
@@ -88,7 +107,7 @@ func SimulateCopy() error {
 
 // SimulatePaste sends appropriate paste shortcut (Ctrl+Shift+V for terminals, Ctrl+V for GUI) to active window
 func SimulatePaste() error {
-	time.Sleep(80 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
 		os.Setenv("DISPLAY", ":0")
