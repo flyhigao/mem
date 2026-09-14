@@ -425,7 +425,6 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 			return
 		}
 
-		prevID := lastSeenID
 		lastSeenID = msg.ID
 
 		// Skip messages published by this same device
@@ -457,7 +456,7 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 		// Check if eligible for direct-to-screen paste:
 		// 1. Within 10 minutes of last action (pull, push, auto_paste)
 		// 2. Previous message was pulled
-		if state.IsDirectPasteEligible(prevID) {
+		if state.IsDirectPasteEligible() {
 			if err := paste.SimulatePaste(); err != nil {
 				log.Printf("⚠️ Direct paste warning: %v", err)
 			} else {

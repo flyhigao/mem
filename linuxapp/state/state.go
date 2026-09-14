@@ -82,24 +82,13 @@ func RecordSeen(msgID int64) {
 	}
 }
 
-// IsDirectPasteEligible checks if a new message should be automatically pasted onto screen:
-// 1. Within 10 minutes of last action (pull, push, or auto_paste)
-// 2. The previous message was pulled (or this is the continuation of active session)
-func IsDirectPasteEligible(prevMsgID int64) bool {
+// IsDirectPasteEligible checks if an incoming message should be automatically pasted onto screen:
+// Active session is valid if an action (pull, push, or auto_paste) occurred within the last 10 minutes.
+func IsDirectPasteEligible() bool {
 	st := LoadState()
 	if st.LastActionTime.IsZero() {
 		return false
 	}
 
-	// Rule 1: Must be within 10 minutes of last action
-	if time.Since(st.LastActionTime) > 10*time.Minute {
-		return false
-	}
-
-	// Rule 2: The previous message must have been pulled (active window in use)
-	if prevMsgID > 0 && st.LastPulledID < prevMsgID {
-		return false
-	}
-
-	return true
+	return time.Since(st.LastActionTime) <= 10*time.Minute
 }
