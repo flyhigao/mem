@@ -60,8 +60,8 @@
 ---
 
 ### 4. 实施准备清单 (待后续开启时执行)
-- [ ] `webservice/internal/handlers/sse.go`：实现基于 Go 原生 channel 的发布/订阅事件总线。
-- [ ] `webservice/main.go`：挂载 `/api/v1/messages/stream` 路由。
+- [x] `webservice/internal/handlers/stream.go`：实现基于 Go 原生 channel 的发布/订阅事件总线。
+- [x] `webservice/main.go`：挂载 `/api/v1/messages/stream` 路由。
 - [ ] `androidapp/app/build.gradle.kts`：引入 `com.squareup.okhttp3:okhttp-sse`。
 - [ ] `androidapp/app/src/main/AndroidManifest.xml`：补充 `WAKE_LOCK`、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` 权限声明。
 - [ ] `androidapp`：实现 SSE 客户端连接、通知音播放与悬浮窗新消息弹出联动。

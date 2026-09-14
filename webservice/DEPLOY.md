@@ -597,7 +597,7 @@ fail2ban-client status                                            # 5 个 jail �
 
 ---
 
-## 六、日常运维
+## 六、日常运维与版本升级
 
 ```bash
 systemctl status mem-webservice        # 状态
@@ -608,17 +608,42 @@ fail2ban-client status mem-web         # 查看封禁情况
 fail2ban-client set mem-web unbanip <IP>   # 手动解封
 fail2ban-client set mem-web banip <IP>     # 手动封禁
 
-# 升级：替换二进制后重启（SQLite 数据在 /opt/mem/mem.db，不受影响）
-systemctl stop mem-webservice
-curl -fL -o /opt/mem/mem-server https://github.com/flyhigao/mem/releases/latest/download/mem-server-linux-amd64
-chmod +x /opt/mem/mem-server
-systemctl start mem-webservice
-
 # 备份数据
 cp /opt/mem/mem.db /opt/mem/mem.db.bak-$(date +%F)
 ```
 
-### 6.1 日志轮转（logrotate）
+### 6.1 服务端版本升级指南（v1.0.0 -> v1.1.0）
+
+#### 1. v1.1.0 新版本变化说明
+- **双推流引擎架构 (StreamHub)**：服务端内置事件总线，同时挂载全双工 WebSocket 与单向低功耗 SSE 广播通道。
+  - **WebSocket (`/api/v1/ws`)**：为桌面端（Linux/Mac/Windows）提供极低延迟的全双工文本推流与活动窗口直接上屏。
+  - **SSE (`/api/v1/messages/stream`)**：为 Android 手机端提供无需维持高频 Ping 心跳的低功耗单向唤醒通知流，避免基带射频发热与待机耗电。
+- **100% 向前兼容**：
+  - SQLite 数据库结构（`mem.db`）完全兼容，无需执行任何数据库迁移操作。
+  - 用户鉴权、API Token 隔离、网页控制台（WebUI）及所有现存 REST API 行为均保持不变。
+- **Nginx 反代零改动**：
+  - 现存 Nginx 4.3 节配置中已包含 `proxy_set_header Upgrade $http_upgrade`、`Connection "upgrade"` 及 `proxy_read_timeout 60s`，因此 **Nginx 完全无需修改任何配置**。
+
+#### 2. 云端一键升级步骤（耗时约 3 秒）
+在部署了 Web 服务的云服务器上直接执行以下命令即可完成升级：
+
+```bash
+# 1. 停止运行中的旧版本
+sudo systemctl stop mem-webservice
+
+# 2. 从 GitHub Releases 下载最新 amd64 二进制并赋权
+sudo curl -fL -o /opt/mem/mem-server   https://github.com/flyhigao/mem/releases/latest/download/mem-server-linux-amd64
+sudo chmod +x /opt/mem/mem-server
+
+# 3. 启动新版本
+sudo systemctl start mem-webservice
+
+# 4. 验证服务状态与健康检查
+sudo systemctl status mem-webservice --no-pager
+curl -s https://mem.codet.net:8444/api/v1/ping
+```
+
+### 6.2 日志轮转（logrotate）
 
 **为什么需要**：`/root/nginx-proxy/logs/` 下的日志默认只增不减（部署时无任何轮转配置）。其中：
 
