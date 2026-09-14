@@ -39,7 +39,7 @@ func loadConfig(configPath string) ConfigWithMeta {
 		ServerURL:    "https://mem.codet.net:8444",
 		Token:        "",
 		Source:       "Linux",
-		Hotkey:       "ctrl+alt+v",
+		Hotkey:       "super+v",
 		AutoPaste:    true,
 		Notify:       true,
 		PollInterval: 3,

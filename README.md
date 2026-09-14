@@ -51,8 +51,8 @@
   - 模拟粘贴：支持 `xdotool`、`ydotool`、`wtype` 触发自动粘贴
   - 桌面通知：通过 `notify-send` 弹出内容预览
 - 使用方式：
-  - 绑定系统快捷键（如 `Ctrl + Alt + V`）执行 `mem-client pull` 即可瞬间获取最新手机内容并自动粘贴。
-  - 绑定系统快捷键（如 `Ctrl + Alt + C`）执行 `mem-client push` 即可将电脑剪贴板一键推送至手机。
+  - 绑定系统快捷键（如 `Super + V (Win+V)`）执行 `mem-client pull` 即可瞬间获取最新手机内容并自动粘贴。
+  - 绑定系统快捷键（如 `Super + C (Win+C)`）执行 `mem-client push` 即可将电脑剪贴板一键推送至手机。
   - 支持 `mem-client daemon` 后台常驻监听与实时同步。
 
 ### 3. `androidapp` (Android 手机客户端)

@@ -2,7 +2,7 @@
   "server_url": "https://mem.codet.net:8444",
   "token": "YOUR_API_TOKEN_HERE",
   "source": "Linux",
-  "hotkey": "ctrl+alt+v",
+  "hotkey": "super+v",
   "auto_paste": true,
   "notify": true,
   "poll_interval": 3
