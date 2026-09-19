@@ -1,9 +1,15 @@
 package handlers
 
 import (
+	"crypto/rand"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,14 +22,16 @@ import (
 var indexHTML []byte
 
 type WebHandler struct {
-	db       *db.DB
-	sessions *auth.SessionManager
+	db        *db.DB
+	sessions  *auth.SessionManager
+	uploadDir string
 }
 
-func NewWebHandler(database *db.DB, sm *auth.SessionManager) *WebHandler {
+func NewWebHandler(database *db.DB, sm *auth.SessionManager, uploadDir string) *WebHandler {
 	return &WebHandler{
-		db:       database,
-		sessions: sm,
+		db:        database,
+		sessions:  sm,
+		uploadDir: uploadDir,
 	}
 }
 
@@ -297,5 +305,198 @@ func (h *WebHandler) HandleWebDeleteToken(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	writeJSON(w, http.StatusOK, APIResponse{Success: true})
+}
+
+// HandleWebUploadFiles handles POST /web/api/files
+func (h *WebHandler) HandleWebUploadFiles(w http.ResponseWriter, r *http.Request) {
+	sess, ok := h.getSessionUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 35<<20)
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "解析上传表单失败: "+err.Error())
+		return
+	}
+
+	fileHeaders := r.MultipartForm.File["files"]
+	if len(fileHeaders) == 0 {
+		fileHeaders = r.MultipartForm.File["file"]
+	}
+	if len(fileHeaders) == 0 {
+		writeError(w, http.StatusBadRequest, "请选择需要上传的文件")
+		return
+	}
+
+	for _, fh := range fileHeaders {
+		if fh.Size > MaxSingleFileSize {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("文件 [%s] 超过 10MB 上限 (%d 字节)", fh.Filename, fh.Size))
+			return
+		}
+	}
+
+	var uploadedRecords []db.FileRecord
+	for _, fh := range fileHeaders {
+		if err := EnsureUserStorageQuota(h.db, h.uploadDir, sess.UserID, fh.Size); err != nil {
+			writeError(w, http.StatusInternalServerError, "处理存储配额失败: "+err.Error())
+			return
+		}
+
+		src, err := fh.Open()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "无法打开上传文件: "+err.Error())
+			return
+		}
+
+		ext := filepath.Ext(fh.Filename)
+		b := make([]byte, 8)
+		_, _ = rand.Read(b)
+		storedName := fmt.Sprintf("u%d_%d_%s%s", sess.UserID, time.Now().UnixNano(), hex.EncodeToString(b), ext)
+		dstPath := filepath.Join(h.uploadDir, storedName)
+
+		dst, err := os.Create(dstPath)
+		if err != nil {
+			src.Close()
+			writeError(w, http.StatusInternalServerError, "保存文件失败: "+err.Error())
+			return
+		}
+
+		copied, err := io.Copy(dst, src)
+		src.Close()
+		dst.Close()
+		if err != nil {
+			_ = os.Remove(dstPath)
+			writeError(w, http.StatusInternalServerError, "写入文件失败: "+err.Error())
+			return
+		}
+
+		contentType := fh.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		rec, err := h.db.AddFile(sess.UserID, nil, fh.Filename, storedName, copied, contentType)
+		if err != nil {
+			_ = os.Remove(dstPath)
+			writeError(w, http.StatusInternalServerError, "保存记录失败: "+err.Error())
+			return
+		}
+		uploadedRecords = append(uploadedRecords, *rec)
+	}
+
+	writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    uploadedRecords,
+	})
+}
+
+// HandleWebGetFiles handles GET /web/api/files
+func (h *WebHandler) HandleWebGetFiles(w http.ResponseWriter, r *http.Request) {
+	sess, ok := h.getSessionUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if val, err := strconv.Atoi(o); err == nil && val >= 0 {
+			offset = val
+		}
+	}
+
+	files, err := h.db.GetFiles(sess.UserID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if files == nil {
+		files = []db.FileRecord{}
+	}
+
+	totalSize, err := h.db.GetUserTotalFileSize(sess.UserID)
+	if err != nil {
+		totalSize = 0
+	}
+
+	writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: FileListResponse{
+			Files:     files,
+			TotalSize: totalSize,
+			MaxSize:   MaxTotalUserQuota,
+		},
+	})
+}
+
+// HandleWebDownloadFile handles GET /web/api/files/{id}/download
+func (h *WebHandler) HandleWebDownloadFile(w http.ResponseWriter, r *http.Request) {
+	sess, ok := h.getSessionUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// Expected parts: ["web", "api", "files", "{id}", "download"]
+	if len(parts) < 5 {
+		writeError(w, http.StatusBadRequest, "Invalid download URL path")
+		return
+	}
+
+	fileID, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid file ID")
+		return
+	}
+
+	fileRec, err := h.db.GetFileByID(sess.UserID, fileID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "File not found")
+		return
+	}
+
+	serveFileDownload(w, r, h.uploadDir, fileRec)
+}
+
+// HandleWebDeleteFile handles DELETE /web/api/files/{id}
+func (h *WebHandler) HandleWebDeleteFile(w http.ResponseWriter, r *http.Request) {
+	sess, ok := h.getSessionUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// Expected parts: ["web", "api", "files", "{id}"]
+	if len(parts) < 4 {
+		writeError(w, http.StatusBadRequest, "Missing ID")
+		return
+	}
+
+	fileID, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid ID")
+		return
+	}
+
+	deleted, err := h.db.DeleteFile(sess.UserID, fileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	_ = os.Remove(filepath.Join(h.uploadDir, deleted.StoredName))
+
 	writeJSON(w, http.StatusOK, APIResponse{Success: true})
 }

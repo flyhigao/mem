@@ -33,6 +33,7 @@ func main() {
 	hostFlag := flag.String("host", "", "Server listen host (e.g. 127.0.0.1 or 0.0.0.0)")
 	portFlag := flag.String("port", "8080", "HTTP server port")
 	dbPath := flag.String("db", "mem.db", "SQLite database file path")
+	uploadDir := flag.String("upload-dir", "uploads", "Upload directory path")
 	flag.Parse()
 
 	// Environment variable overrides
@@ -48,6 +49,11 @@ func main() {
 	if envDB := os.Getenv("DB_PATH"); envDB != "" {
 		*dbPath = envDB
 	}
+	if envUpload := os.Getenv("UPLOAD_DIR"); envUpload != "" {
+		*uploadDir = envUpload
+	}
+
+	_ = os.MkdirAll(*uploadDir, 0755)
 
 	finalAddr := ""
 	if *addrFlag != "" {
@@ -60,6 +66,7 @@ func main() {
 
 	log.Printf("⚡ Initializing Mem Web Service...")
 	log.Printf("📁 Database path: %s", *dbPath)
+	log.Printf("📂 Uploads path: %s", *uploadDir)
 
 	database, err := db.InitDB(*dbPath)
 	if err != nil {
@@ -69,8 +76,8 @@ func main() {
 
 	sessionManager := auth.NewSessionManager()
 	wsHub := handlers.NewStreamHub(database)
-	apiHandler := handlers.NewAPIHandler(database, wsHub)
-	webHandler := handlers.NewWebHandler(database, sessionManager)
+	apiHandler := handlers.NewAPIHandler(database, wsHub, *uploadDir)
+	webHandler := handlers.NewWebHandler(database, sessionManager, *uploadDir)
 
 	mux := http.NewServeMux()
 
@@ -107,6 +114,26 @@ func main() {
 		}
 	})
 
+	// Web UI File APIs
+	mux.HandleFunc("/web/api/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			webHandler.HandleWebGetFiles(w, r)
+		} else if r.Method == http.MethodPost {
+			webHandler.HandleWebUploadFiles(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/web/api/files/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/download") {
+			webHandler.HandleWebDownloadFile(w, r)
+		} else if r.Method == http.MethodDelete {
+			webHandler.HandleWebDeleteFile(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	// REST API (Token-based) for Android App, Linux Client, etc.
 	mux.HandleFunc("/api/v1/ws", wsHub.HandleWS)
 	mux.HandleFunc("/api/v1/messages/stream", wsHub.HandleSSE)
@@ -124,6 +151,26 @@ func main() {
 	mux.HandleFunc("/api/v1/messages/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			apiHandler.HandleDeleteMessage(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// REST API File routes
+	mux.HandleFunc("/api/v1/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			apiHandler.HandleGetFiles(w, r)
+		} else if r.Method == http.MethodPost {
+			apiHandler.HandleUploadFiles(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/v1/files/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/download") {
+			apiHandler.HandleDownloadFile(w, r)
+		} else if r.Method == http.MethodDelete {
+			apiHandler.HandleDeleteFile(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

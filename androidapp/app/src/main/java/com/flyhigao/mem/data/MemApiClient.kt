@@ -137,4 +137,103 @@ object MemApiClient {
             Result.failure(Exception("无法连接到服务器: ${e.message}"))
         }
     }
+
+    suspend fun uploadFiles(
+        serverUrl: String,
+        token: String,
+        files: List<Pair<String, ByteArray>>
+    ): Result<List<FileRecord>> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${serverUrl.trimEnd('/')}/api/v1/files"
+            val bodyBuilder = okhttp3.MultipartBody.Builder().setType(okhttp3.MultipartBody.FORM)
+            for ((filename, bytes) in files) {
+                val mediaType = "application/octet-stream".toMediaType()
+                bodyBuilder.addFormDataPart("files", filename, bytes.toRequestBody(mediaType))
+            }
+            val requestBody = bodyBuilder.build()
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .post(requestBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $respStr"))
+                }
+                val type = object : TypeToken<ApiResponse<List<FileRecord>>>() {}.type
+                val apiResp: ApiResponse<List<FileRecord>> = gson.fromJson(respStr, type)
+                if (apiResp.success) {
+                    Result.success(apiResp.data ?: emptyList())
+                } else {
+                    Result.failure(Exception(apiResp.error ?: "未知错误"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getFiles(
+        serverUrl: String,
+        token: String,
+        limit: Int = 50
+    ): Result<FileListResponse> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${serverUrl.trimEnd('/')}/api/v1/files?limit=$limit"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $respStr"))
+                }
+                val type = object : TypeToken<ApiResponse<FileListResponse>>() {}.type
+                val apiResp: ApiResponse<FileListResponse> = gson.fromJson(respStr, type)
+                if (apiResp.success && apiResp.data != null) {
+                    Result.success(apiResp.data)
+                } else {
+                    Result.failure(Exception(apiResp.error ?: "未知错误"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteFile(
+        serverUrl: String,
+        token: String,
+        fileId: Long
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val url = "${serverUrl.trimEnd('/')}/api/v1/files/$fileId"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer $token")
+                .delete()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val respStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $respStr"))
+                }
+                val type = object : TypeToken<ApiResponse<Any>>() {}.type
+                val apiResp: ApiResponse<Any> = gson.fromJson(respStr, type)
+                if (apiResp.success) {
+                    Result.success(Unit)
+                } else {
+                    Result.failure(Exception(apiResp.error ?: "未知错误"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

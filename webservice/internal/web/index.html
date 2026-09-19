@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mem - 跨端文本中转站</title>
+    <title>Mem - 跨端文本与文件中转站</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -60,7 +60,7 @@
             max-width: 860px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
+            gap: 16px;
         }
 
         /* Header */
@@ -98,6 +98,43 @@
             font-weight: 500;
         }
 
+        /* Nav Tabs */
+        .nav-tabs {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .tab-btn {
+            background: var(--card-bg);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            padding: 9px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            border-color: var(--primary);
+        }
+
+        .tab-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
+        .tab-btn.active .badge {
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+        }
+
         /* Card common */
         .card {
             background: var(--card-bg);
@@ -121,29 +158,30 @@
             align-items: center;
             gap: 6px;
             font-size: 0.9rem;
+            text-decoration: none;
         }
 
         button:hover, .btn:hover {
             background: var(--primary-hover);
         }
 
-        button.btn-secondary {
+        button.btn-secondary, .btn-secondary {
             background: transparent;
             border: 1px solid var(--border-color);
             color: var(--text-main);
         }
 
-        button.btn-secondary:hover {
+        button.btn-secondary:hover, .btn-secondary:hover {
             background: var(--card-hover);
         }
 
-        button.btn-danger {
+        button.btn-danger, .btn-danger {
             background: transparent;
             color: var(--danger);
             border: 1px solid rgba(244, 63, 94, 0.3);
         }
 
-        button.btn-danger:hover {
+        button.btn-danger:hover, .btn-danger:hover {
             background: var(--danger);
             color: #fff;
         }
@@ -283,6 +321,90 @@
             border-radius: 6px;
         }
 
+        /* Files Section */
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--radius);
+            padding: 26px;
+            text-align: center;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.02);
+            transition: all 0.2s;
+        }
+
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(56, 189, 248, 0.06);
+        }
+
+        .progress-bar-container {
+            background: var(--bg-color);
+            border-radius: 9999px;
+            height: 8px;
+            width: 100%;
+            overflow: hidden;
+            margin: 8px 0;
+            border: 1px solid var(--border-color);
+        }
+
+        .progress-bar-fill {
+            background: var(--primary);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .file-item {
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .file-item:hover {
+            border-color: var(--primary);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .file-icon {
+            font-size: 1.6rem;
+            flex-shrink: 0;
+        }
+
+        .file-name {
+            font-weight: 600;
+            font-size: 0.92rem;
+            word-break: break-all;
+        }
+
+        .file-meta {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 3px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .file-actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
         /* Modal */
         .modal-overlay {
             position: fixed;
@@ -367,7 +489,7 @@
     <!-- Auth Section -->
     <div id="authSection" class="auth-container card" style="display: none;">
         <div class="logo" style="justify-content: center; margin-bottom: 20px;">
-            ⚡ Mem 跨端文本中转
+            ⚡ Mem 跨端文本与文件
         </div>
         <div class="auth-tabs">
             <div class="auth-tab active" id="tabLogin" onclick="switchAuthTab('login')">登录</div>
@@ -400,36 +522,91 @@
             </div>
         </header>
 
-        <!-- Send Box -->
-        <div class="card" style="margin-top: 16px;">
-            <div style="font-weight: 600; margin-bottom: 10px; font-size: 0.95rem;">📝 快速发送文本</div>
-            <textarea id="messageInput" placeholder="输入要中转的文本内容... (Ctrl + Enter 快速发送)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.keyCode===13){sendMessage();}"></textarea>
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-                <div style="font-size: 0.8rem; color: var(--text-muted);">
-                    支持多行文本，发送后其他设备立即可读
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="tab-btn active" id="navTabMessages" onclick="switchMainTab('messages')">
+                📝 文本中转 <span id="msgCountBadge" class="badge">0 条</span>
+            </button>
+            <button class="tab-btn" id="navTabFiles" onclick="switchMainTab('files')">
+                📁 文件中转 <span id="fileCountBadge" class="badge">0 个</span>
+            </button>
+        </div>
+
+        <!-- Tab 1: Messages View -->
+        <div id="viewMessages" style="display: block;">
+            <!-- Send Box -->
+            <div class="card" style="margin-top: 16px;">
+                <div style="font-weight: 600; margin-bottom: 10px; font-size: 0.95rem;">📝 快速发送文本</div>
+                <textarea id="messageInput" placeholder="输入要中转的文本内容... (Ctrl + Enter 快速发送)" onkeydown="if((event.ctrlKey||event.metaKey)&&event.keyCode===13){sendMessage();}"></textarea>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                        支持多行文本，发送后其他设备立即可读
+                    </div>
+                    <button onclick="sendMessage()">🚀 发送</button>
                 </div>
-                <button onclick="sendMessage()">🚀 发送</button>
+            </div>
+
+            <!-- History List -->
+            <div class="card" style="margin-top: 16px;">
+                <div class="list-header">
+                    <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+                        📋 消息历史 (保留最新 500 条)
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted);">
+                            <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh(this.checked)">
+                            自动刷新 (3s)
+                        </label>
+                        <button class="btn-secondary btn-sm" onclick="loadMessages()">🔄 刷新</button>
+                    </div>
+                </div>
+
+                <div id="messageList">
+                    <div class="empty-state">加载中...</div>
+                </div>
             </div>
         </div>
 
-        <!-- History List -->
-        <div class="card" style="margin-top: 16px;">
-            <div class="list-header">
-                <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
-                    📋 消息历史 (保留最新 500 条)
-                    <span id="msgCountBadge" class="badge">0 条</span>
+        <!-- Tab 2: Files View -->
+        <div id="viewFiles" style="display: none;">
+            <!-- Storage & Upload Card -->
+            <div class="card" style="margin-top: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <div style="font-weight: 600; font-size: 0.95rem;">💾 存储配额 (上限 1 GB)</div>
+                    <div id="storageText" style="font-size: 0.82rem; color: var(--text-muted);">0 MB / 1024 MB (0%)</div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text-muted);">
-                        <input type="checkbox" id="autoRefreshToggle" checked onchange="toggleAutoRefresh(this.checked)">
-                        自动刷新 (3s)
-                    </label>
-                    <button class="btn-secondary btn-sm" onclick="loadMessages()">🔄 刷新</button>
+                <div class="progress-bar-container">
+                    <div id="storageBar" class="progress-bar-fill"></div>
                 </div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 16px;">
+                    💡 单个文件上限 10MB。若历史存储累计超过 1GB，系统将自动清理最旧文件以腾出空间。
+                </div>
+
+                <!-- Dropzone / Picker -->
+                <input type="file" id="webFilePicker" multiple style="display: none;" onchange="handleWebFilesSelected(this.files)">
+                <div class="drop-zone" id="fileDropZone" onclick="document.getElementById('webFilePicker').click()">
+                    <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 6px;">
+                        📤 点击选择文件 或 拖拽文件到此处
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted);">
+                        支持批量多选文件，单文件不超过 10 MB
+                    </div>
+                </div>
+                <div id="uploadStatus" style="font-size: 0.85rem; color: var(--primary); margin-top: 10px; display: none;"></div>
             </div>
 
-            <div id="messageList">
-                <div class="empty-state">加载中...</div>
+            <!-- File List Card -->
+            <div class="card" style="margin-top: 16px;">
+                <div class="list-header">
+                    <div style="font-weight: 600; font-size: 1rem; display: flex; align-items: center; gap: 8px;">
+                        📁 已上传文件列表
+                    </div>
+                    <button class="btn-secondary btn-sm" onclick="loadFiles()">🔄 刷新</button>
+                </div>
+
+                <div id="fileList">
+                    <div class="empty-state">加载中...</div>
+                </div>
             </div>
         </div>
     </div>
@@ -462,6 +639,7 @@
 <script>
     let currentAuthMode = 'login';
     let currentUser = null;
+    let currentMainTab = 'messages';
     let autoRefreshInterval = null;
 
     // Toast
@@ -473,19 +651,70 @@
         setTimeout(() => toast.remove(), 2500);
     }
 
-    // Copy to clipboard
+    // Copy to clipboard - fully compatible with Windows, HTTP & HTTPS contexts
     function copyText(text) {
-        navigator.clipboard.writeText(text).then(() => {
+        if (text === undefined || text === null) return;
+        text = String(text);
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('✅ 已复制到剪贴板');
+            }).catch(() => {
+                fallbackCopyText(text);
+            });
+        } else {
+            fallbackCopyText(text);
+        }
+    }
+
+    function fallbackCopyText(text) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '2em';
+        textarea.style.height = '2em';
+        textarea.style.padding = '0';
+        textarea.style.border = 'none';
+        textarea.style.outline = 'none';
+        textarea.style.boxShadow = 'none';
+        textarea.style.background = 'transparent';
+        textarea.style.opacity = '0';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+
+        let successful = false;
+        try {
+            successful = document.execCommand('copy');
+        } catch (err) {
+            successful = false;
+        }
+        document.body.removeChild(textarea);
+
+        if (successful) {
             showToast('✅ 已复制到剪贴板');
-        }).catch(err => {
-            const input = document.createElement('textarea');
-            input.value = text;
-            document.body.appendChild(input);
-            input.select();
-            document.execCommand('copy');
-            document.body.removeChild(input);
-            showToast('✅ 已复制到剪贴板');
-        });
+        } else {
+            window.prompt('请按 Ctrl+C 复制文本：', text);
+        }
+    }
+
+    // Switch main tabs (messages / files)
+    function switchMainTab(tab) {
+        currentMainTab = tab;
+        document.getElementById('navTabMessages').className = 'tab-btn ' + (tab === 'messages' ? 'active' : '');
+        document.getElementById('navTabFiles').className = 'tab-btn ' + (tab === 'files' ? 'active' : '');
+        document.getElementById('viewMessages').style.display = tab === 'messages' ? 'block' : 'none';
+        document.getElementById('viewFiles').style.display = tab === 'files' ? 'block' : 'none';
+
+        if (tab === 'files') {
+            loadFiles();
+        } else {
+            loadMessages();
+        }
     }
 
     // Auth tabs
@@ -508,6 +737,7 @@
                 document.getElementById('appSection').style.display = 'block';
                 document.getElementById('userBadge').innerText = '👤 ' + currentUser.username;
                 loadMessages();
+                loadFiles();
                 toggleAutoRefresh(true);
             } else {
                 showAuth();
@@ -645,6 +875,176 @@
         }
     }
 
+    // Files Section
+    function formatBytes(bytes) {
+        if (bytes <= 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function getFileIcon(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return '🖼️';
+        if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return '📦';
+        if (['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext)) return '📄';
+        if (['mp3', 'wav', 'ogg', 'flac', 'aac'].includes(ext)) return '🎵';
+        if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext)) return '🎬';
+        if (['apk'].includes(ext)) return '📱';
+        if (['json', 'xml', 'go', 'kt', 'py', 'js', 'html', 'css', 'sh'].includes(ext)) return '💻';
+        return '📁';
+    }
+
+    async function loadFiles() {
+        try {
+            const res = await fetch('/web/api/files?limit=100');
+            const data = await res.json();
+            if (data.success && data.data) {
+                const { files, total_size, max_size } = data.data;
+                renderFiles(files || []);
+                updateStorageBar(total_size || 0, max_size || 1073741824);
+            }
+        } catch (e) {
+            console.error('Failed to load files', e);
+        }
+    }
+
+    function updateStorageBar(used, max) {
+        const usedMB = (used / (1024 * 1024)).toFixed(1);
+        const maxMB = (max / (1024 * 1024)).toFixed(0);
+        const percent = Math.min(100, Math.max(0, (used / max) * 100));
+
+        document.getElementById('storageText').innerText = `${usedMB} MB / ${maxMB} MB (${percent.toFixed(1)}%)`;
+        const bar = document.getElementById('storageBar');
+        bar.style.width = percent + '%';
+        if (percent > 90) {
+            bar.style.backgroundColor = 'var(--danger)';
+        } else if (percent > 70) {
+            bar.style.backgroundColor = '#f59e0b';
+        } else {
+            bar.style.backgroundColor = 'var(--primary)';
+        }
+    }
+
+    function renderFiles(list) {
+        const container = document.getElementById('fileList');
+        document.getElementById('fileCountBadge').innerText = list.length + ' 个';
+
+        if (list.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无已上传文件</div>';
+            return;
+        }
+
+        container.innerHTML = list.map(f => {
+            const timeStr = new Date(f.created_at).toLocaleString();
+            const icon = getFileIcon(f.filename);
+            const sizeStr = formatBytes(f.file_size);
+            const tokenTag = f.token_name ? `<span class="badge" style="font-size: 0.7rem;">🔑 ${escapeHtml(f.token_name)}</span>` : '';
+            const downloadUrl = `/web/api/files/${f.id}/download`;
+
+            return `
+                <div class="file-item" id="file-${f.id}">
+                    <div class="file-info">
+                        <div class="file-icon">${icon}</div>
+                        <div style="min-width: 0; flex: 1;">
+                            <div class="file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</div>
+                            <div class="file-meta">
+                                <span>⚖️ ${sizeStr}</span>
+                                <span>🕒 ${timeStr}</span>
+                                ${tokenTag}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <a class="btn btn-sm" href="${downloadUrl}" download="${escapeHtml(f.filename)}">⬇️ 下载</a>
+                        <button class="btn-danger btn-sm" onclick="deleteFile(${f.id})">🗑️ 删除</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function handleWebFilesSelected(files) {
+        if (!files || files.length === 0) return;
+        const statusEl = document.getElementById('uploadStatus');
+
+        // Verify size for each file <= 10MB
+        const maxSingle = 10 * 1024 * 1024;
+        for (let i = 0; i < files.length; i++) {
+            if (files[i].size > maxSingle) {
+                showToast(`❌ 文件 [${files[i].name}] 超过 10MB 上限 (${(files[i].size / 1024 / 1024).toFixed(2)} MB)`);
+                return;
+            }
+        }
+
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            formData.append('files', files[i]);
+        }
+
+        statusEl.innerText = `⏳ 正在上传 ${files.length} 个文件...`;
+        statusEl.style.display = 'block';
+
+        try {
+            const res = await fetch('/web/api/files', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(`✅ 成功上传 ${files.length} 个文件`);
+                statusEl.style.display = 'none';
+                document.getElementById('webFilePicker').value = '';
+                loadFiles();
+            } else {
+                showToast('❌ 上传失败: ' + (data.error || '未知错误'));
+                statusEl.innerText = '❌ 上传失败: ' + data.error;
+            }
+        } catch (e) {
+            showToast('❌ 上传请求失败');
+            statusEl.innerText = '❌ 网络请求异常';
+        }
+    }
+
+    // Drag & Drop
+    const dropZone = document.getElementById('fileDropZone');
+    ['dragenter', 'dragover'].forEach(name => {
+        dropZone.addEventListener(name, (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(name => {
+        dropZone.addEventListener(name, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+        });
+    });
+    dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length > 0) {
+            handleWebFilesSelected(dt.files);
+        }
+    });
+
+    async function deleteFile(id) {
+        if (!confirm('确定删除此文件吗？')) return;
+        try {
+            const res = await fetch('/web/api/files/' + id, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                showToast('🗑️ 文件已删除');
+                loadFiles();
+            } else {
+                showToast('❌ 删除失败');
+            }
+        } catch (e) {
+            showToast('❌ 删除请求失败');
+        }
+    }
+
+    // Auto-refresh
     function toggleAutoRefresh(enable) {
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
@@ -652,7 +1052,11 @@
         }
         if (enable) {
             autoRefreshInterval = setInterval(() => {
-                loadMessages();
+                if (currentMainTab === 'messages') {
+                    loadMessages();
+                } else {
+                    loadFiles();
+                }
             }, 3000);
         }
     }

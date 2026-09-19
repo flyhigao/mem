@@ -1,8 +1,14 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,12 +18,17 @@ import (
 )
 
 type APIHandler struct {
-	db    *db.DB
-	wsHub *StreamHub
+	db        *db.DB
+	wsHub     *StreamHub
+	uploadDir string
 }
 
-func NewAPIHandler(database *db.DB, wsHub *StreamHub) *APIHandler {
-	return &APIHandler{db: database, wsHub: wsHub}
+func NewAPIHandler(database *db.DB, wsHub *StreamHub, uploadDir string) *APIHandler {
+	return &APIHandler{
+		db:        database,
+		wsHub:     wsHub,
+		uploadDir: uploadDir,
+	}
 }
 
 type APIResponse struct {
@@ -228,5 +239,224 @@ func (h *APIHandler) HandleDeleteMessage(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, APIResponse{
 		Success: true,
 		Data:    "Message deleted",
+	})
+}
+
+// HandleUploadFiles handles POST /api/v1/files
+func (h *APIHandler) HandleUploadFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, tokenID, err := auth.AuthenticateAPI(h.db, r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Invalid or missing token")
+		return
+	}
+
+	// Limit request body to 35MB max for multipart form
+	r.Body = http.MaxBytesReader(w, r.Body, 35<<20)
+	if err := r.ParseMultipartForm(12 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "解析上传表单失败或文件过大: "+err.Error())
+		return
+	}
+
+	fileHeaders := r.MultipartForm.File["files"]
+	if len(fileHeaders) == 0 {
+		fileHeaders = r.MultipartForm.File["file"]
+	}
+	if len(fileHeaders) == 0 {
+		writeError(w, http.StatusBadRequest, "未提供上传文件 (表单字段需为 files 或 file)")
+		return
+	}
+
+	// Validate individual file sizes
+	for _, fh := range fileHeaders {
+		if fh.Size > MaxSingleFileSize {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("文件 [%s] 大小超过 10MB 限制 (%d 字节)", fh.Filename, fh.Size))
+			return
+		}
+	}
+
+	var uploadedRecords []db.FileRecord
+	for _, fh := range fileHeaders {
+		// Enforce storage quota: delete oldest files if needed
+		if err := EnsureUserStorageQuota(h.db, h.uploadDir, userID, fh.Size); err != nil {
+			writeError(w, http.StatusInternalServerError, "处理存储配额失败: "+err.Error())
+			return
+		}
+
+		src, err := fh.Open()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "无法打开上传文件: "+err.Error())
+			return
+		}
+
+		ext := filepath.Ext(fh.Filename)
+		b := make([]byte, 8)
+		_, _ = rand.Read(b)
+		storedName := fmt.Sprintf("u%d_%d_%s%s", userID, time.Now().UnixNano(), hex.EncodeToString(b), ext)
+		dstPath := filepath.Join(h.uploadDir, storedName)
+
+		dst, err := os.Create(dstPath)
+		if err != nil {
+			src.Close()
+			writeError(w, http.StatusInternalServerError, "保存文件失败: "+err.Error())
+			return
+		}
+
+		copied, err := io.Copy(dst, src)
+		src.Close()
+		dst.Close()
+		if err != nil {
+			_ = os.Remove(dstPath)
+			writeError(w, http.StatusInternalServerError, "写入文件失败: "+err.Error())
+			return
+		}
+
+		contentType := fh.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		rec, err := h.db.AddFile(userID, tokenID, fh.Filename, storedName, copied, contentType)
+		if err != nil {
+			_ = os.Remove(dstPath)
+			writeError(w, http.StatusInternalServerError, "记录文件信息失败: "+err.Error())
+			return
+		}
+		uploadedRecords = append(uploadedRecords, *rec)
+	}
+
+	writeJSON(w, http.StatusCreated, APIResponse{
+		Success: true,
+		Data:    uploadedRecords,
+	})
+}
+
+// HandleGetFiles handles GET /api/v1/files
+func (h *APIHandler) HandleGetFiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, _, err := auth.AuthenticateAPI(h.db, r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Invalid or missing token")
+		return
+	}
+
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	offset := 0
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if val, err := strconv.Atoi(o); err == nil && val >= 0 {
+			offset = val
+		}
+	}
+
+	files, err := h.db.GetFiles(userID, limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "获取文件列表失败: "+err.Error())
+		return
+	}
+	if files == nil {
+		files = []db.FileRecord{}
+	}
+
+	totalSize, err := h.db.GetUserTotalFileSize(userID)
+	if err != nil {
+		totalSize = 0
+	}
+
+	writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data: FileListResponse{
+			Files:     files,
+			TotalSize: totalSize,
+			MaxSize:   MaxTotalUserQuota,
+		},
+	})
+}
+
+// HandleDownloadFile handles GET /api/v1/files/{id}/download
+func (h *APIHandler) HandleDownloadFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, _, err := auth.AuthenticateAPI(h.db, r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Invalid or missing token")
+		return
+	}
+
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// Expected parts: ["api", "v1", "files", "{id}", "download"]
+	if len(parts) < 5 {
+		writeError(w, http.StatusBadRequest, "Invalid download URL path")
+		return
+	}
+
+	fileID, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid file ID")
+		return
+	}
+
+	fileRec, err := h.db.GetFileByID(userID, fileID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "File not found")
+		return
+	}
+
+	serveFileDownload(w, r, h.uploadDir, fileRec)
+}
+
+// HandleDeleteFile handles DELETE /api/v1/files/{id}
+func (h *APIHandler) HandleDeleteFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	userID, _, err := auth.AuthenticateAPI(h.db, r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "Invalid or missing token")
+		return
+	}
+
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	// Expected parts: ["api", "v1", "files", "{id}"]
+	if len(parts) < 4 {
+		writeError(w, http.StatusBadRequest, "Missing file ID")
+		return
+	}
+
+	fileID, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid file ID")
+		return
+	}
+
+	deleted, err := h.db.DeleteFile(userID, fileID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete file from DB: "+err.Error())
+		return
+	}
+
+	_ = os.Remove(filepath.Join(h.uploadDir, deleted.StoredName))
+
+	writeJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Data:    "File deleted",
 	})
 }
