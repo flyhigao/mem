@@ -382,7 +382,7 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 	log.Printf("📡 Mem Daemon started. Server: %s", cfg.ServerURL)
 	log.Printf("   Device Source: [%s] | Auto-Copy: %v | Notification: %v",
 		cfg.GetSource(), !noCopy, !noNotify && cfg.Notify)
-	log.Printf("   Auto-Paste: %v | Notification: %v", cfg.AutoPaste, !noNotify && cfg.Notify)
+	log.Printf("   Smart Direct-to-Screen: Enabled within 10 mins of Super+V/C")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -453,16 +453,16 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 				fmt.Sprintf("收到来自 [%s] 的文本:\n%s", msg.Source, preview))
 		}
 
-		// Auto-paste into active window if enabled
-		if cfg.AutoPaste && !noCopy {
+		// Auto paste into active window if in active 10-minute session (started by Super+V or Super+C)
+		if cfg.AutoPaste && !noCopy && state.IsDirectPasteEligible() {
 			if err := paste.SimulatePaste(); err != nil {
 				log.Printf("⚠️ Direct paste warning: %v", err)
 			} else {
-				log.Printf("🚀 Direct to screen: Auto-pasted into active window")
+				log.Printf("🚀 Direct to screen: Auto-pasted into active window (10-min active session)")
 				state.RecordAutoPaste(msg.ID)
 			}
 		} else {
-			log.Printf("ℹ️ Message ready in clipboard (auto_paste disabled)")
+			log.Printf("ℹ️ Message ready in clipboard (direct paste idle: no Super+V/C in last 10 mins)")
 			state.RecordSeen(msg.ID)
 		}
 	}
