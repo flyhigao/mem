@@ -382,7 +382,7 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 	log.Printf("📡 Mem Daemon started. Server: %s", cfg.ServerURL)
 	log.Printf("   Device Source: [%s] | Auto-Copy: %v | Notification: %v",
 		cfg.GetSource(), !noCopy, !noNotify && cfg.Notify)
-	log.Printf("   Smart Direct-to-Screen: Enabled within 10 mins of pull/push")
+	log.Printf("   Auto-Paste: %v | Notification: %v", cfg.AutoPaste, !noNotify && cfg.Notify)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -453,18 +453,16 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 				fmt.Sprintf("收到来自 [%s] 的文本:\n%s", msg.Source, preview))
 		}
 
-		// Check if eligible for direct-to-screen paste:
-		// 1. Within 10 minutes of last action (pull, push, auto_paste)
-		// 2. Previous message was pulled
-		if state.IsDirectPasteEligible() {
+		// Auto-paste into active window if enabled
+		if cfg.AutoPaste && !noCopy {
 			if err := paste.SimulatePaste(); err != nil {
 				log.Printf("⚠️ Direct paste warning: %v", err)
 			} else {
-				log.Printf("🚀 Direct to screen: Auto-pasted into active window (10-min active session)")
+				log.Printf("🚀 Direct to screen: Auto-pasted into active window")
 				state.RecordAutoPaste(msg.ID)
 			}
 		} else {
-			log.Printf("ℹ️ Message ready in clipboard (direct paste idle: no pull/push in last 10 mins)")
+			log.Printf("ℹ️ Message ready in clipboard (auto_paste disabled)")
 			state.RecordSeen(msg.ID)
 		}
 	}
@@ -865,8 +863,16 @@ func main() {
 		daemonInterval := daemonFs.Duration("interval", 0, "")
 		daemonFs.DurationVar(daemonInterval, "i", 0, "")
 		daemonNoCopy := daemonFs.Bool("no-copy", false, "")
+		daemonNoPaste := daemonFs.Bool("no-paste", false, "")
 		daemonNoNotify := daemonFs.Bool("no-notify", !cfg.Notify, "")
 		_ = daemonFs.Parse(cmdArgs)
+
+		if *daemonNoPaste {
+			cfg.AutoPaste = false
+		}
+		if *daemonNoNotify {
+			cfg.Notify = false
+		}
 
 		if cfg.Token == "" {
 			log.Fatalf("❌ Error: API Token is empty. Please run 'mem-client config set token <TOKEN>' or use -token <TOKEN>")
