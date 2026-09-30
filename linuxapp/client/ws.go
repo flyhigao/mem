@@ -78,7 +78,7 @@ func ConnectWS(serverURL string, token string) (*WSClient, error) {
 
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write([]byte(handshakeReq)); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("failed to write handshake request: %w", err)
 	}
 
@@ -86,24 +86,21 @@ func ConnectWS(serverURL string, token string) (*WSClient, error) {
 	buf := make([]byte, 2048)
 	n, err := conn.Read(buf)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("failed to read handshake response: %w", err)
 	}
 
 	respStr := string(buf[:n])
 	if !strings.Contains(respStr, "101 Switching Protocols") {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("server rejected WebSocket upgrade: %s", strings.Split(respStr, "\r\n")[0])
 	}
-
-	// Clear deadline for long-lived connection
-	_ = conn.SetDeadline(time.Time{})
 
 	client := &WSClient{
 		conn:       conn,
 		msgChan:    make(chan *Message, 32),
 		closeChan:  make(chan struct{}),
-		pingTicker: time.NewTicker(25 * time.Second),
+		pingTicker: time.NewTicker(20 * time.Second),
 	}
 
 	go client.readLoop()
@@ -172,9 +169,15 @@ func (c *WSClient) pingLoop() {
 }
 
 func (c *WSClient) readLoop() {
-	defer c.Close()
+	defer func() {
+		c.Close()
+		close(c.msgChan)
+	}()
 
 	for {
+		// Expect data/pong within 45s (ping is sent every 20s), detect half-open TCP
+		_ = c.conn.SetReadDeadline(time.Now().Add(45 * time.Second))
+
 		header := make([]byte, 2)
 		if _, err := io.ReadFull(c.conn, header); err != nil {
 			return
@@ -223,12 +226,15 @@ func (c *WSClient) readLoop() {
 			return
 		case 0x9: // Ping -> Pong
 			_ = c.sendFrame(0xA, payload)
+		case 0xA: // Pong
+		// keepalive received, continue
 		case 0x1: // Text
 			var msg Message
 			if err := json.Unmarshal(payload, &msg); err == nil && msg.ID > 0 {
 				select {
 				case c.msgChan <- &msg:
-				default:
+				case <-c.closeChan:
+					return
 				}
 			}
 		}

@@ -405,7 +405,7 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 	if err == nil {
 		log.Printf("🔌 Connected to WebSocket real-time stream")
 	} else {
-		log.Printf("⚠️ WebSocket stream not available (%v), using HTTP poll fallback (auto-retry WS every 15s)...", err)
+		log.Printf("⚠️ WebSocket stream not available (%v), using HTTP poll fallback (auto-retry WS every 5s)...", err)
 	}
 
 	defer func() {
@@ -417,7 +417,7 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	wsRetryTicker := time.NewTicker(15 * time.Second)
+	wsRetryTicker := time.NewTicker(5 * time.Second)
 	defer wsRetryTicker.Stop()
 
 	handleNewMessage := func(msg *client.Message) {
@@ -485,6 +485,10 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 					wsClient.Close()
 					wsClient = nil
 				}
+				// Immediately check for any missed message via REST API
+				if latest, err := c.FetchLatestMessage(); err == nil && latest != nil {
+					handleNewMessage(latest)
+				}
 				continue
 			}
 			handleNewMessage(msg)
@@ -495,10 +499,15 @@ func doDaemon(cfg client.Config, interval time.Duration, noCopy bool, noNotify b
 				if err == nil {
 					wsClient = newWS
 					log.Printf("🔌 WebSocket reconnected successfully!")
+					// Check for any missed message while disconnected
+					if latest, err := c.FetchLatestMessage(); err == nil && latest != nil {
+						handleNewMessage(latest)
+					}
 				}
 			}
 
 		case <-ticker.C:
+			// If WS is not connected, poll as resilient fallback
 			if wsClient == nil {
 				latest, err := c.FetchLatestMessage()
 				if err == nil && latest != nil {
