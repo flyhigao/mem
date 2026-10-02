@@ -641,6 +641,8 @@
     let currentUser = null;
     let currentMainTab = 'messages';
     let autoRefreshInterval = null;
+    let currentMessages = new Map();
+    let currentTokens = new Map();
 
     // Toast
     function showToast(msg) {
@@ -671,21 +673,12 @@
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
-        textarea.style.top = '0';
-        textarea.style.left = '0';
-        textarea.style.width = '2em';
-        textarea.style.height = '2em';
-        textarea.style.padding = '0';
-        textarea.style.border = 'none';
-        textarea.style.outline = 'none';
-        textarea.style.boxShadow = 'none';
-        textarea.style.background = 'transparent';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
         textarea.style.opacity = '0';
-        textarea.setAttribute('readonly', '');
         document.body.appendChild(textarea);
         textarea.focus();
         textarea.select();
-        textarea.setSelectionRange(0, textarea.value.length);
 
         let successful = false;
         try {
@@ -699,6 +692,20 @@
             showToast('✅ 已复制到剪贴板');
         } else {
             window.prompt('请按 Ctrl+C 复制文本：', text);
+        }
+    }
+
+    function copyMessage(id) {
+        const m = currentMessages.get(id);
+        if (m && m.content !== undefined) {
+            copyText(m.content);
+        }
+    }
+
+    function copyToken(id) {
+        const t = currentTokens.get(id);
+        if (t && t.token !== undefined) {
+            copyText(t.token);
         }
     }
 
@@ -804,9 +811,12 @@
         document.getElementById('msgCountBadge').innerText = list.length + ' 条';
 
         if (list.length === 0) {
+            currentMessages.clear();
             container.innerHTML = '<div class="empty-state">暂无消息，赶快发送一条吧！</div>';
             return;
         }
+
+        currentMessages = new Map(list.map(m => [m.id, m]));
 
         container.innerHTML = list.map(m => {
             const timeStr = new Date(m.created_at).toLocaleString();
@@ -829,7 +839,7 @@
                     </div>
                     <div class="message-content">${escapeHtml(m.content)}</div>
                     <div class="message-actions">
-                        <button class="btn-secondary btn-sm" onclick="copyText(${JSON.stringify(m.content)})">📋 复制</button>
+                        <button class="btn-secondary btn-sm" onclick="copyMessage(${m.id})">📋 复制</button>
                         <button class="btn-danger btn-sm" onclick="deleteMessage(${m.id})">🗑️ 删除</button>
                     </div>
                 </div>
@@ -1079,9 +1089,11 @@
             if (data.success) {
                 const list = data.data || [];
                 if (list.length === 0) {
+                    currentTokens.clear();
                     container.innerHTML = '<div class="empty-state">暂无 Token，请新建一个以供 Android / Linux 端使用</div>';
                     return;
                 }
+                currentTokens = new Map(list.map(t => [t.id, t]));
                 container.innerHTML = list.map(t => {
                     const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleString() : '从未使用';
                     return `
@@ -1092,7 +1104,7 @@
                                 <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">最后使用: ${lastUsed}</div>
                             </div>
                             <div style="display: flex; gap: 6px; flex-shrink: 0;">
-                                <button class="btn-secondary btn-sm" onclick="copyText('${t.token}')">复制</button>
+                                <button class="btn-secondary btn-sm" onclick="copyToken(${t.id})">复制</button>
                                 <button class="btn-danger btn-sm" onclick="deleteToken(${t.id})">删除</button>
                             </div>
                         </div>
