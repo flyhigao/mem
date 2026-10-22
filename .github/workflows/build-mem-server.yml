@@ -1,0 +1,42 @@
+name: Build mem-server
+
+on:
+  push:
+    branches:
+      - security/disable-registration
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build mem-server (linux/amd64)
+        working-directory: webservice
+        run: |
+          go mod download
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" -o mem-server .
+
+      - name: Publish build artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view mem-server-build >/dev/null 2>&1 \
+            || gh release create mem-server-build \
+                 --title "mem-server build" \
+                 --notes "Automated build of ${GITHUB_SHA}" \
+                 --prerelease
+          gh release upload mem-server-build webservice/mem-server --clobber

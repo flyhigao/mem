@@ -27,6 +27,9 @@ type WebHandler struct {
 	uploadDir string
 }
 
+// registrationEnabled controls public sign-up. Set to true to re-enable.
+const registrationEnabled = false
+
 func NewWebHandler(database *db.DB, sm *auth.SessionManager, uploadDir string) *WebHandler {
 	return &WebHandler{
 		db:        database,
@@ -54,6 +57,11 @@ type AuthRequest struct {
 }
 
 func (h *WebHandler) HandleRegister(w http.ResponseWriter, r *http.Request) {
+	if !registrationEnabled {
+		writeError(w, http.StatusForbidden, "注册已关闭")
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
